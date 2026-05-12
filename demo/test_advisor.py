@@ -121,7 +121,7 @@ def test_safety_gate_wait():
 def test_safety_gate_take_order_visible():
     gate = SafetyGate()
     state = _make_state()
-    items = [{"cargo": {"cargo_id": "X"}}]
+    items = [{"cargo": {"cargo_id": "X", "start": {"lat": 23, "lng": 113}, "end": {"lat": 24, "lng": 114}}, "distance_km": 10.0}]
     ok, reason = gate.validate({"action": "take_order", "params": {"cargo_id": "X"}}, state, items)
     assert ok, f"visible cargo should pass, got {reason}"
     print("[PASS] safety_gate take_order visible ok")
@@ -237,6 +237,103 @@ def test_model_decision_service_instantiation():
     print("[PASS] model_decision_service instantiation")
 
 
+def test_load_time_window_expired_in_builder():
+    builder = CandidateFactBuilder()
+    state = _make_state(current_minute=1000)
+    items = [
+        {
+            "cargo": {
+                "cargo_id": "EXPIRED_LTW",
+                "cargo_name": "LateCargo",
+                "start": {"lat": 23.1, "lng": 113.1},
+                "end": {"lat": 23.5, "lng": 113.5},
+                "price": 500,
+                "cost_time_minutes": 120,
+                "load_time_window_end": "2026-03-01 00:10",
+            },
+            "distance_km": 10.0,
+        }
+    ]
+    candidates = builder.build_candidate_pool(state, (), items)
+    take_order = [c for c in candidates if c.action == "take_order"]
+    assert len(take_order) == 1
+    c = take_order[0]
+    assert "load_time_window_expired" in c.hard_invalid_reasons, f"expected load_time_window_expired, got {c.hard_invalid_reasons}"
+    print(f"[PASS] load_time_window_expired in builder: {c.hard_invalid_reasons}")
+
+
+def test_load_time_window_unreachable_in_builder():
+    builder = CandidateFactBuilder()
+    state = _make_state(current_minute=5)
+    items = [
+        {
+            "cargo": {
+                "cargo_id": "TIGHT_LTW",
+                "cargo_name": "TightCargo",
+                "start": {"lat": 23.1, "lng": 113.1},
+                "end": {"lat": 23.5, "lng": 113.5},
+                "price": 500,
+                "cost_time_minutes": 120,
+                "load_time_window_end": "2026-03-01 00:12",
+            },
+            "distance_km": 10.0,
+        }
+    ]
+    candidates = builder.build_candidate_pool(state, (), items)
+    take_order = [c for c in candidates if c.action == "take_order"]
+    assert len(take_order) == 1
+    c = take_order[0]
+    assert "load_time_window_unreachable" in c.hard_invalid_reasons, f"expected load_time_window_unreachable, got {c.hard_invalid_reasons}"
+    print(f"[PASS] load_time_window_unreachable in builder: {c.hard_invalid_reasons}")
+
+
+def test_load_time_window_valid_in_builder():
+    builder = CandidateFactBuilder()
+    state = _make_state(current_minute=100)
+    items = [
+        {
+            "cargo": {
+                "cargo_id": "VALID_LTW",
+                "cargo_name": "GoodCargo",
+                "start": {"lat": 23.1, "lng": 113.1},
+                "end": {"lat": 23.5, "lng": 113.5},
+                "price": 500,
+                "cost_time_minutes": 120,
+                "load_time_window_end": "2026-03-01 08:00",
+            },
+            "distance_km": 10.0,
+        }
+    ]
+    candidates = builder.build_candidate_pool(state, (), items)
+    take_order = [c for c in candidates if c.action == "take_order"]
+    assert len(take_order) == 1
+    c = take_order[0]
+    assert not c.hard_invalid_reasons, f"expected no hard_invalid, got {c.hard_invalid_reasons}"
+    assert c.facts.get("cargo_deadline_minute") is not None
+    assert c.facts.get("deadline_source") == "load_time_window_end"
+    print(f"[PASS] load_time_window valid in builder: deadline_minute={c.facts.get('cargo_deadline_minute')}")
+
+
+def test_safety_gate_load_time_window_expired():
+    gate = SafetyGate()
+    state = _make_state(current_minute=1000)
+    items = [{"cargo": {"cargo_id": "EXPIRED_LTW", "load_time_window_end": "2026-03-01 00:10"}, "distance_km": 10.0}]
+    ok, reason = gate.validate({"action": "take_order", "params": {"cargo_id": "EXPIRED_LTW"}}, state, items)
+    assert not ok, f"should reject, ok={ok}"
+    assert reason == "load_time_window_expired", f"expected load_time_window_expired, got {reason}"
+    print(f"[PASS] safety_gate load_time_window_expired: {reason}")
+
+
+def test_safety_gate_load_time_window_unreachable():
+    gate = SafetyGate()
+    state = _make_state(current_minute=5)
+    items = [{"cargo": {"cargo_id": "TIGHT_LTW", "load_time_window_end": "2026-03-01 00:12"}, "distance_km": 10.0}]
+    ok, reason = gate.validate({"action": "take_order", "params": {"cargo_id": "TIGHT_LTW"}}, state, items)
+    assert not ok, f"should reject, ok={ok}"
+    assert reason == "load_time_window_unreachable", f"expected load_time_window_unreachable, got {reason}"
+    print(f"[PASS] safety_gate load_time_window_unreachable: {reason}")
+
+
 def test_find_candidate():
     svc = object.__new__(ModelDecisionService)
     candidates = [
@@ -264,11 +361,16 @@ if __name__ == "__main__":
     test_candidate_fact_builder_generates_wait()
     test_candidate_fact_builder_generates_take_order()
     test_candidate_hard_invalid_expired_cargo()
+    test_load_time_window_expired_in_builder()
+    test_load_time_window_unreachable_in_builder()
+    test_load_time_window_valid_in_builder()
     test_safety_gate_wait()
     test_safety_gate_take_order_visible()
     test_safety_gate_take_order_invisible()
     test_safety_gate_reposition_valid()
     test_safety_gate_reposition_invalid()
+    test_safety_gate_load_time_window_expired()
+    test_safety_gate_load_time_window_unreachable()
     test_advisor_no_api()
     test_advisor_parse_valid_candidate_id()
     test_advisor_parse_unknown_candidate_id()

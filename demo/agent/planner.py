@@ -10,6 +10,16 @@ from agent.state_tracker import longest_wait_for_day
 DEFAULT_COST_PER_KM = 1.5
 REPOSITION_SPEED_KM_PER_HOUR = 60.0
 CARGO_VIEW_BATCH_SIZE = 10
+LOAD_WINDOW_BUFFER_MINUTES = 5
+_DEADLINE_KEYS = (
+    "load_time_window_end",
+    "load_end_time",
+    "loading_end_time",
+    "load_deadline",
+    "pickup_deadline",
+    "latest_load_time",
+    "remove_time",
+)
 
 
 def estimate_scan_cost(items_count: int) -> int:
@@ -83,8 +93,6 @@ class CandidateFactBuilder:
         cargo: dict[str, Any],
         cargo_id: str,
     ) -> Candidate | None:
-        from agent.geo_utils import distance_to_minutes, haversine_km
-
         start = _point_from_payload(cargo.get("start"))
         end = _point_from_payload(cargo.get("end"))
         if start is None or end is None:
@@ -122,11 +130,17 @@ class CandidateFactBuilder:
         hard_invalid: list[str] = []
         soft_risk: list[str] = []
 
-        remove_minute = self._parse_remove_time(cargo.get("remove_time"))
-        if remove_minute is not None and remove_minute <= state.current_minute + 15:
-            hard_invalid.append("remove_time_expired")
-        elif remove_minute is not None and remove_minute <= arrival_minute + 5:
-            hard_invalid.append("pickup_unreachable")
+        deadline_minute, deadline_source = self._parse_cargo_deadline_minute(cargo)
+        facts["pickup_arrival_minute"] = arrival_minute
+        facts["cargo_deadline_minute"] = deadline_minute
+        facts["deadline_source"] = deadline_source
+        facts["load_window_buffer_minutes"] = LOAD_WINDOW_BUFFER_MINUTES
+
+        if deadline_minute is not None:
+            if state.current_minute >= deadline_minute:
+                hard_invalid.append("load_time_window_expired")
+            elif arrival_minute + LOAD_WINDOW_BUFFER_MINUTES > deadline_minute:
+                hard_invalid.append("load_time_window_unreachable")
 
         if finish_minute > state.simulation_duration_days * 1440:
             hard_invalid.append("end_month_unreachable")
@@ -213,14 +227,18 @@ class CandidateFactBuilder:
                     risk += amount * 2.0
         return risk
 
-    def _parse_remove_time(self, remove_time: Any) -> int | None:
-        if not remove_time:
-            return None
-        try:
-            from agent.geo_utils import parse_wall_time_to_minute
-            return parse_wall_time_to_minute(remove_time)
-        except Exception:
-            return None
+    def _parse_cargo_deadline_minute(self, cargo: dict[str, Any]) -> tuple[int | None, str]:
+        for key in _DEADLINE_KEYS:
+            value = cargo.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                parsed = parse_wall_time_to_minute(value)
+            except Exception:
+                parsed = None
+            if parsed is not None:
+                return parsed, key
+        return None, ""
 
     def estimate_scan_cost(self, items_count: int) -> int:
         return math.ceil(items_count / 10) if items_count > 0 else 0

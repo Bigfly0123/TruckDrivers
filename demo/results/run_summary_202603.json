@@ -1,0 +1,31 @@
+{
+  "month": "2026-03",
+  "simulate_time_seconds": 2088.81,
+  "simulation_duration_days": 31,
+  "completed_steps": 461,
+  "remaining_cargo_count": 0,
+  "driver_completed_steps": {
+    "D001": 46,
+    "D002": 50,
+    "D003": 46,
+    "D004": 38,
+    "D005": 45,
+    "D006": 46,
+    "D007": 56,
+    "D008": 52,
+    "D009": 36,
+    "D010": 46
+  },
+  "driver_result_files": {
+    "D001": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D001_20260512_202935.jsonl",
+    "D002": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D002_20260512_202935.jsonl",
+    "D003": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D003_20260512_202935.jsonl",
+    "D004": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D004_20260512_202935.jsonl",
+    "D005": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D005_20260512_202935.jsonl",
+    "D006": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D006_20260512_202935.jsonl",
+    "D007": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D007_20260512_202935.jsonl",
+    "D008": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D008_20260512_202935.jsonl",
+    "D009": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D009_20260512_202935.jsonl",
+    "D010": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D010_20260512_202935.jsonl"
+  }
+}

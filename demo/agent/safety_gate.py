@@ -4,7 +4,8 @@ import logging
 from typing import Any
 
 from agent.agent_models import DecisionState
-from agent.geo_utils import haversine_km
+from agent.geo_utils import haversine_km, parse_wall_time_to_minute
+from agent.planner import _DEADLINE_KEYS, LOAD_WINDOW_BUFFER_MINUTES
 
 
 REPOSITION_SPEED_KM_PER_HOUR = 60.0
@@ -79,7 +80,37 @@ class SafetyGate:
         if matched_item is None:
             return False, "cargo_not_found"
 
+        cargo = matched_item.get("cargo") if isinstance(matched_item.get("cargo"), dict) else {}
+        deadline_minute = self._parse_deadline(cargo)
+        if deadline_minute is not None:
+            if state.current_minute >= deadline_minute:
+                return False, "load_time_window_expired"
+
+            pickup_km = 0.0
+            try:
+                pickup_km = float(matched_item.get("distance_km", 0))
+            except (TypeError, ValueError):
+                pass
+            from agent.geo_utils import distance_to_minutes
+            pickup_minutes = 0 if pickup_km <= 1e-6 else distance_to_minutes(pickup_km, REPOSITION_SPEED_KM_PER_HOUR)
+            arrival_minute = state.current_minute + pickup_minutes
+            if arrival_minute + LOAD_WINDOW_BUFFER_MINUTES > deadline_minute:
+                return False, "load_time_window_unreachable"
+
         return True, ""
+
+    def _parse_deadline(self, cargo: dict[str, Any]) -> int | None:
+        for key in _DEADLINE_KEYS:
+            value = cargo.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                parsed = parse_wall_time_to_minute(value)
+            except Exception:
+                parsed = None
+            if parsed is not None:
+                return parsed
+        return None
 
     def _validate_reposition(
         self,
