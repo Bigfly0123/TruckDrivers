@@ -10,6 +10,7 @@ from agent.agent_models import Candidate, DecisionState
 from agent.constraint_evaluator import ConstraintEvaluator, ConstraintImpact, EvaluationResult
 from agent.constraint_runtime import compute_constraint_runtime_state, ConstraintRuntimeState
 from agent.llm_decision_advisor import AdvisorContext, AdvisorDecision, CandidateSummary, LlmDecisionAdvisor
+from agent.phase3 import AgentState, build_default_graph
 from agent.planner import CandidateFactBuilder, estimate_scan_cost
 from agent.preference_compiler import PreferenceCompiler
 from agent.preference_constraints import ConstraintSpec, compile_constraints
@@ -29,8 +30,24 @@ class ModelDecisionService:
         self._safety_gate = SafetyGate()
         self._constraint_evaluator = ConstraintEvaluator()
         self._last_decision_day: dict[str, int] = {}
+        self._graph_runner = build_default_graph(api)
 
     def decide(self, driver_id: str) -> dict[str, Any]:
+        state = AgentState(driver_id=driver_id)
+        try:
+            final_state = self._graph_runner.run(state)
+            if final_state.final_action is not None:
+                return self._normalize_action(final_state.final_action)
+            self._logger.warning("phase3 graph returned no final action for driver_id=%s", driver_id)
+            state.mark_fallback("phase3_missing_final_action", {"action": "wait", "params": {"duration_minutes": 60}})
+            self._graph_runner.record_decision_summary(state)
+        except Exception as exc:
+            self._logger.exception("phase3 graph failed for driver_id=%s: %s", driver_id, exc)
+            state.mark_fallback("phase3_unexpected_exception", {"action": "wait", "params": {"duration_minutes": 60}})
+            self._graph_runner.record_decision_summary(state)
+        return {"action": "wait", "params": {"duration_minutes": 60}}
+
+    def _decide_legacy(self, driver_id: str) -> dict[str, Any]:
         status = self._api.get_driver_status(driver_id)
         latitude = float(status["current_lat"])
         longitude = float(status["current_lng"])
