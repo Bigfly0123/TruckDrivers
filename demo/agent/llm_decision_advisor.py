@@ -18,6 +18,19 @@ def _minute_to_wall_time(minute: int) -> str:
 
 
 @dataclass(frozen=True)
+class CandidateSummary:
+    candidate_id: str
+    action: str
+    estimated_net: float = 0.0
+    estimated_penalty_exposure: float = 0.0
+    estimated_net_after_penalty: float = 0.0
+    satisfies_constraints: bool = True
+    soft_risk_reasons: tuple[str, ...] = ()
+    constraint_impacts: tuple[dict[str, Any], ...] = ()
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class AdvisorContext:
     state: DecisionState
     rules: tuple[PreferenceRule, ...]
@@ -26,6 +39,7 @@ class AdvisorContext:
     raw_preferences: list[str]
     recent_actions: list[dict[str, Any]] = field(default_factory=list)
     trigger_reason: str = "normal_candidate_decision"
+    candidate_summaries: dict[str, CandidateSummary] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -69,6 +83,13 @@ class LlmDecisionAdvisor:
             "6. If no profitable option exists, choose a wait candidate.\n"
             "7. Active missions with high penalties should influence your decision.\n"
             "8. Keep reason under 100 characters.\n\n"
+            "CONSTRAINT-AWARENESS:\n"
+            "- Each candidate may have constraint_impacts showing which preferences it affects.\n"
+            "- estimated_net_after_penalty = profit minus potential penalty exposure.\n"
+            "- penalty_exposure is the total potential cost from violating soft preferences.\n"
+            "- satisfies_constraints=false means at least one preference is at risk.\n"
+            "- Candidates with source='constraint' were generated to satisfy specific preferences.\n"
+            "- Prefer candidates with lower penalty_exposure when profits are similar.\n\n"
             "OUTPUT FORMAT: Strict JSON:\n"
             '{\n'
             '  "selected_candidate_id": "string",\n'
@@ -85,6 +106,13 @@ class LlmDecisionAdvisor:
                 "candidate_id": c.candidate_id,
                 "action": c.action,
             }
+            summary = context.candidate_summaries.get(c.candidate_id)
+            if summary:
+                desc["estimated_net_after_penalty"] = summary.estimated_net_after_penalty
+                desc["penalty_exposure"] = summary.estimated_penalty_exposure
+                desc["satisfies_constraints"] = summary.satisfies_constraints
+                if summary.constraint_impacts:
+                    desc["constraint_impacts"] = list(summary.constraint_impacts)
             if c.action == "take_order":
                 desc["cargo_id"] = c.params.get("cargo_id", "")
                 desc["price"] = c.facts.get("price", 0)
@@ -93,6 +121,12 @@ class LlmDecisionAdvisor:
                 desc["haul_distance_km"] = c.facts.get("haul_distance_km", 0)
             elif c.action == "wait":
                 desc["duration_minutes"] = c.params.get("duration_minutes", 0)
+                if c.facts.get("satisfies_continuous_rest"):
+                    desc["satisfies_continuous_rest"] = True
+                    desc["required_rest_minutes"] = c.facts.get("required_minutes", 0)
+            elif c.action == "reposition":
+                desc["latitude"] = c.params.get("latitude")
+                desc["longitude"] = c.params.get("longitude")
             valid_desc.append(desc)
 
         soft_desc = []
@@ -102,12 +136,24 @@ class LlmDecisionAdvisor:
                 "action": c.action,
                 "risk_reasons": list(c.soft_risk_reasons),
             }
+            summary = context.candidate_summaries.get(c.candidate_id)
+            if summary:
+                desc["estimated_net_after_penalty"] = summary.estimated_net_after_penalty
+                desc["penalty_exposure"] = summary.estimated_penalty_exposure
+                desc["satisfies_constraints"] = summary.satisfies_constraints
+                if summary.constraint_impacts:
+                    desc["constraint_impacts"] = list(summary.constraint_impacts)
             if c.action == "take_order":
                 desc["cargo_id"] = c.params.get("cargo_id", "")
                 desc["price"] = c.facts.get("price", 0)
                 desc["estimated_net"] = c.facts.get("estimated_net", 0)
             elif c.action == "wait":
                 desc["duration_minutes"] = c.params.get("duration_minutes", 0)
+                if c.facts.get("satisfies_continuous_rest"):
+                    desc["satisfies_continuous_rest"] = True
+            elif c.action == "reposition":
+                desc["latitude"] = c.params.get("latitude")
+                desc["longitude"] = c.params.get("longitude")
             soft_desc.append(desc)
 
         user_content = {

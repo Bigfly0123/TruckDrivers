@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from agent.agent_models import Candidate, DecisionState
-from agent.llm_decision_advisor import AdvisorContext, AdvisorDecision, LlmDecisionAdvisor
+from agent.constraint_evaluator import ConstraintEvaluator, ConstraintImpact, EvaluationResult
+from agent.llm_decision_advisor import AdvisorContext, AdvisorDecision, CandidateSummary, LlmDecisionAdvisor
 from agent.planner import CandidateFactBuilder, estimate_scan_cost
 from agent.preference_compiler import PreferenceCompiler
+from agent.preference_constraints import ConstraintSpec, compile_constraints
 from agent.safety_gate import SafetyGate
 from agent.state_tracker import StateTracker
 from simkit.ports import SimulationApiPort
@@ -23,6 +25,7 @@ class ModelDecisionService:
         self._planner = CandidateFactBuilder()
         self._advisor = LlmDecisionAdvisor(api)
         self._safety_gate = SafetyGate()
+        self._constraint_evaluator = ConstraintEvaluator()
         self._last_decision_day: dict[str, int] = {}
 
     def decide(self, driver_id: str) -> dict[str, Any]:
@@ -38,6 +41,7 @@ class ModelDecisionService:
         history = self._api.query_decision_history(driver_id, -1)
         preferences = list(status.get("preferences") or [])
         rules = self._preference_compiler.compile(preferences)
+        constraints = compile_constraints(rules)
         state = self._state_tracker.build(
             driver_id=driver_id,
             status=status,
@@ -48,7 +52,8 @@ class ModelDecisionService:
 
         log_entry: dict[str, Any] = {"driver_id": driver_id, "step": len(state.history_records)}
         try:
-            all_candidates = self._planner.build_candidate_pool(state, rules, items)
+            all_candidates = self._planner.build_candidate_pool(state, rules, items, constraints)
+            all_candidates = self._evaluate_constraints(all_candidates, constraints, state)
 
             valid_candidates = [c for c in all_candidates if not c.hard_invalid_reasons and not c.soft_risk_reasons]
             soft_risk_candidates = [c for c in all_candidates if not c.hard_invalid_reasons and c.soft_risk_reasons]
@@ -72,6 +77,7 @@ class ModelDecisionService:
 
             recent_actions = self._recent_actions(state)
             raw_preferences = [self._preference_text(p) for p in preferences]
+            candidate_summaries = self._build_candidate_summaries(all_candidates)
 
             advisor_result = self._advisor.advise(
                 AdvisorContext(
@@ -82,6 +88,7 @@ class ModelDecisionService:
                     raw_preferences=raw_preferences,
                     recent_actions=recent_actions,
                     trigger_reason="normal_candidate_decision",
+                    candidate_summaries=candidate_summaries,
                 )
             )
 
@@ -130,6 +137,65 @@ class ModelDecisionService:
             if c.candidate_id == candidate_id:
                 return c
         return None
+
+    def _evaluate_constraints(
+        self,
+        candidates: list[Candidate],
+        constraints: tuple[ConstraintSpec, ...],
+        state: DecisionState,
+    ) -> list[Candidate]:
+        if not constraints:
+            return candidates
+        evaluated: list[Candidate] = []
+        for c in candidates:
+            result = self._constraint_evaluator.evaluate(c, constraints, state)
+            merged_hard = c.hard_invalid_reasons + result.hard_invalid_reasons
+            merged_soft = c.soft_risk_reasons + result.soft_risk_reasons
+            penalty = result.estimated_penalty_exposure
+            enriched_facts = dict(c.facts)
+            enriched_facts["constraint_impacts"] = tuple(
+                {"constraint_id": imp.constraint_id, "constraint_type": imp.constraint_type,
+                 "status": imp.status, "penalty": imp.penalty, "detail": imp.detail}
+                for imp in result.constraint_impacts
+            )
+            enriched_facts["estimated_penalty_exposure"] = penalty
+            net = float(enriched_facts.get("estimated_net", 0) or 0)
+            enriched_facts["estimated_net_after_penalty"] = round(net - penalty, 2)
+            enriched_facts["satisfies_constraints"] = result.satisfies_all_constraints
+            evaluated.append(Candidate(
+                candidate_id=c.candidate_id,
+                action=c.action,
+                params=c.params,
+                source=c.source,
+                facts=enriched_facts,
+                hard_invalid_reasons=merged_hard,
+                soft_risk_reasons=merged_soft,
+            ))
+        return evaluated
+
+    def _build_candidate_summaries(
+        self,
+        candidates: list[Candidate],
+    ) -> dict[str, CandidateSummary]:
+        summaries: dict[str, CandidateSummary] = {}
+        for c in candidates:
+            impacts_raw = c.facts.get("constraint_impacts", ())
+            impacts_list: list[dict[str, Any]] = []
+            if isinstance(impacts_raw, tuple):
+                for imp in impacts_raw:
+                    if isinstance(imp, dict):
+                        impacts_list.append(imp)
+            summaries[c.candidate_id] = CandidateSummary(
+                candidate_id=c.candidate_id,
+                action=c.action,
+                estimated_net=float(c.facts.get("estimated_net", 0) or 0),
+                estimated_penalty_exposure=float(c.facts.get("estimated_penalty_exposure", 0) or 0),
+                estimated_net_after_penalty=float(c.facts.get("estimated_net_after_penalty", 0) or 0),
+                satisfies_constraints=bool(c.facts.get("satisfies_constraints", True)),
+                soft_risk_reasons=c.soft_risk_reasons,
+                constraint_impacts=tuple(impacts_list),
+            )
+        return summaries
 
     def _fallback_wait(self, state: DecisionState, reason: str) -> dict[str, Any]:
         duration = max(1, min(60, state.remaining_minutes or 60))

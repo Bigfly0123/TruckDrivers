@@ -3,9 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from agent.agent_models import Candidate, CandidateScore, DecisionState, GeoPoint, PreferenceRule, TimeWindow, AreaBounds
+from agent.agent_models import Candidate, DecisionState, PreferenceRule
 from agent.geo_utils import distance_to_minutes, haversine_km, parse_wall_time_to_minute
-from agent.state_tracker import longest_wait_for_day
 
 DEFAULT_COST_PER_KM = 1.5
 REPOSITION_SPEED_KM_PER_HOUR = 60.0
@@ -41,21 +40,13 @@ def _point_from_payload(value: Any) -> tuple[float, float] | None:
     return _safe_float(value.get("lat")), _safe_float(value.get("lng"))
 
 
-def _in_area(lat: float, lng: float, area: AreaBounds) -> bool:
-    return area.lat_min <= lat <= area.lat_max and area.lng_min <= lng <= area.lng_max
-
-
-def _near_point(lat: float, lng: float, point: GeoPoint) -> bool:
-    return haversine_km(lat, lng, point.latitude, point.longitude) <= point.radius_km
-
-
 class CandidateFactBuilder:
     def build_candidate_pool(
         self,
         state: DecisionState,
         rules: tuple[PreferenceRule, ...],
         items: list[dict[str, Any]],
-        active_missions: tuple[Any, ...] = (),
+        constraints: tuple[Any, ...] = (),
     ) -> list[Candidate]:
         candidates: list[Candidate] = []
 
@@ -82,6 +73,9 @@ class CandidateFactBuilder:
             candidate = self._build_cargo_candidate(state, rules, item, cargo, cargo_id)
             if candidate is not None:
                 candidates.append(candidate)
+
+        constraint_candidates = self._generate_constraint_candidates(state, constraints)
+        candidates.extend(constraint_candidates)
 
         return candidates
 
@@ -117,6 +111,7 @@ class CandidateFactBuilder:
 
         facts: dict[str, Any] = {
             "cargo_id": cargo_id,
+            "cargo_name": str(cargo.get("cargo_name") or ""),
             "price": price,
             "estimated_cost": round(estimated_cost, 1),
             "estimated_net": round(estimated_profit, 1),
@@ -125,6 +120,8 @@ class CandidateFactBuilder:
             "estimated_duration_minutes": duration_minutes,
             "pickup_minutes": pickup_minutes,
             "finish_minute": finish_minute,
+            "start": start,
+            "end": end,
         }
 
         hard_invalid: list[str] = []
@@ -145,15 +142,6 @@ class CandidateFactBuilder:
         if finish_minute > state.simulation_duration_days * 1440:
             hard_invalid.append("end_month_unreachable")
 
-        cargo_name = str(cargo.get("cargo_name") or "")
-        hard_risk, hard_reason = self._check_hard_rules(state, rules, cargo_name, start, end, pickup_km, haul_km, arrival_minute, finish_minute)
-        if hard_risk >= 1_000_000:
-            hard_invalid.append(hard_reason or "hard_rule_violation")
-
-        soft_risk_value = self._check_soft_rules(state, rules, cargo_name, start, end, pickup_km, haul_km)
-        if soft_risk_value > 0:
-            soft_risk.append("preference_soft_risk")
-
         return Candidate(
             candidate_id=f"take_order_{cargo_id}",
             action="take_order",
@@ -163,69 +151,6 @@ class CandidateFactBuilder:
             hard_invalid_reasons=tuple(hard_invalid),
             soft_risk_reasons=tuple(soft_risk),
         )
-
-    def _check_hard_rules(
-        self,
-        state: DecisionState,
-        rules: tuple[PreferenceRule, ...],
-        cargo_name: str,
-        start: tuple[float, float],
-        end: tuple[float, float],
-        pickup_km: float,
-        haul_km: float,
-        action_start: int,
-        action_end: int,
-    ) -> tuple[float, str]:
-        risk = 0.0
-        reason = ""
-        for rule in rules:
-            if rule.kind == "forbidden_cargo" and cargo_name in rule.cargo_names and rule.priority == "hard":
-                risk += max(rule.penalty_amount, 1000.0) * 4.0
-                reason = reason or "forbidden_cargo"
-            if rule.kind == "area_bounds" and rule.area_bounds is not None and rule.priority == "hard":
-                if not _in_area(start[0], start[1], rule.area_bounds) or not _in_area(end[0], end[1], rule.area_bounds):
-                    risk += max(rule.penalty_amount, 1000.0) * 4.0
-                    reason = reason or "area_bounds_hard"
-            if rule.kind == "forbidden_zone" and rule.point is not None:
-                if _near_point(start[0], start[1], rule.point) or _near_point(end[0], end[1], rule.point):
-                    risk += max(rule.penalty_amount, 1000.0) * (4.0 if rule.priority == "hard" else 1.5)
-                    if rule.priority == "hard":
-                        reason = reason or "forbidden_zone"
-            if rule.kind == "max_pickup_deadhead" and rule.distance_limit_km is not None and pickup_km > rule.distance_limit_km:
-                if rule.priority == "hard":
-                    over_km = pickup_km - rule.distance_limit_km
-                    risk += over_km * max(rule.penalty_amount, 200.0)
-                    reason = reason or "max_pickup_deadhead"
-            if rule.kind == "max_haul_distance" and rule.distance_limit_km is not None and haul_km > rule.distance_limit_km:
-                if rule.priority == "hard":
-                    over_km = haul_km - rule.distance_limit_km
-                    risk += over_km * max(rule.penalty_amount, 100.0)
-                    reason = reason or "max_haul_distance"
-        return (risk, reason)
-
-    def _check_soft_rules(
-        self,
-        state: DecisionState,
-        rules: tuple[PreferenceRule, ...],
-        cargo_name: str,
-        start: tuple[float, float],
-        end: tuple[float, float],
-        pickup_km: float,
-        haul_km: float,
-    ) -> float:
-        risk = 0.0
-        for rule in rules:
-            amount = max(rule.penalty_amount, 100.0)
-            if rule.kind == "forbidden_cargo" and cargo_name in rule.cargo_names and rule.priority != "hard":
-                risk += amount * 1.5
-            elif rule.kind == "max_pickup_deadhead" and rule.distance_limit_km is not None and pickup_km > rule.distance_limit_km and rule.priority != "hard":
-                risk += (pickup_km - rule.distance_limit_km) * amount
-            elif rule.kind == "max_haul_distance" and rule.distance_limit_km is not None and haul_km > rule.distance_limit_km and rule.priority != "hard":
-                risk += (haul_km - rule.distance_limit_km) * amount
-            elif rule.kind == "area_bounds" and rule.area_bounds is not None and rule.priority == "soft":
-                if not _in_area(start[0], start[1], rule.area_bounds) or not _in_area(end[0], end[1], rule.area_bounds):
-                    risk += amount * 2.0
-        return risk
 
     def _parse_cargo_deadline_minute(self, cargo: dict[str, Any]) -> tuple[int | None, str]:
         for key in _DEADLINE_KEYS:
@@ -239,6 +164,55 @@ class CandidateFactBuilder:
             if parsed is not None:
                 return parsed, key
         return None, ""
+
+    def _generate_constraint_candidates(
+        self,
+        state: DecisionState,
+        constraints: tuple[Any, ...],
+    ) -> list[Candidate]:
+        candidates: list[Candidate] = []
+        existing_ids: set[str] = set()
+        for idx, c in enumerate(constraints):
+            if not hasattr(c, "constraint_type"):
+                continue
+            ct = c.constraint_type
+            if ct == "specific_cargo" and c.cargo_ids:
+                for cid in c.cargo_ids:
+                    candidate_id = f"specific_cargo_{cid}"
+                    if candidate_id in existing_ids:
+                        continue
+                    existing_ids.add(candidate_id)
+                    candidates.append(Candidate(
+                        candidate_id=candidate_id,
+                        action="take_order",
+                        params={"cargo_id": cid},
+                        source="constraint",
+                        facts={"constraint_type": ct, "constraint_id": c.constraint_id},
+                    ))
+            elif ct == "continuous_rest":
+                candidate_id = f"wait_rest_{c.required_minutes or 480}"
+                if candidate_id not in existing_ids:
+                    existing_ids.add(candidate_id)
+                    minutes = c.required_minutes or 480
+                    candidates.append(Candidate(
+                        candidate_id=candidate_id,
+                        action="wait",
+                        params={"duration_minutes": min(minutes, 60)},
+                        source="constraint",
+                        facts={"constraint_type": ct, "satisfies_continuous_rest": True, "required_minutes": minutes},
+                    ))
+            elif ct == "be_at_location_by_deadline" and c.point is not None:
+                candidate_id = f"go_to_{c.constraint_id}"
+                if candidate_id not in existing_ids:
+                    existing_ids.add(candidate_id)
+                    candidates.append(Candidate(
+                        candidate_id=candidate_id,
+                        action="reposition",
+                        params={"latitude": c.point.latitude, "longitude": c.point.longitude},
+                        source="constraint",
+                        facts={"constraint_type": ct, "target_point": (c.point.latitude, c.point.longitude)},
+                    ))
+        return candidates
 
     def estimate_scan_cost(self, items_count: int) -> int:
         return math.ceil(items_count / 10) if items_count > 0 else 0
