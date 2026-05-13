@@ -88,7 +88,10 @@ class LlmDecisionAdvisor:
             "- estimated_net_after_penalty = profit minus potential penalty exposure.\n"
             "- penalty_exposure is the total potential cost from violating soft preferences.\n"
             "- satisfies_constraints=false means at least one preference is at risk.\n"
-            "- Candidates with source='constraint' were generated to satisfy specific preferences.\n"
+            "- Candidates with source='constraint_satisfy' are generated to satisfy specific preferences.\n"
+            "- Some wait/reposition candidates are NOT idle actions; they may satisfy constraints and avoid penalties.\n"
+            "- Compare order profit against penalty exposure and penalty avoidance.\n"
+            "- Choose the candidate with the best expected net outcome, not simply the highest immediate freight income.\n"
             "- Prefer candidates with lower penalty_exposure when profits are similar.\n\n"
             "OUTPUT FORMAT: Strict JSON:\n"
             '{\n'
@@ -100,11 +103,11 @@ class LlmDecisionAdvisor:
 
         state = context.state
 
-        valid_desc = []
-        for c in context.valid_candidates:
+        def _build_desc(c: Candidate) -> dict[str, Any]:
             desc: dict[str, Any] = {
                 "candidate_id": c.candidate_id,
                 "action": c.action,
+                "source": c.source,
             }
             summary = context.candidate_summaries.get(c.candidate_id)
             if summary:
@@ -124,36 +127,28 @@ class LlmDecisionAdvisor:
                 if c.facts.get("satisfies_continuous_rest"):
                     desc["satisfies_continuous_rest"] = True
                     desc["required_rest_minutes"] = c.facts.get("required_minutes", 0)
+                if c.facts.get("avoids_estimated_penalty"):
+                    desc["avoids_estimated_penalty"] = c.facts.get("avoids_estimated_penalty")
+                if c.facts.get("remaining_rest_minutes") is not None:
+                    desc["remaining_rest_minutes"] = c.facts.get("remaining_rest_minutes")
+                if c.facts.get("window_end_minute") is not None:
+                    desc["window_end_minute"] = c.facts.get("window_end_minute")
             elif c.action == "reposition":
                 desc["latitude"] = c.params.get("latitude")
                 desc["longitude"] = c.params.get("longitude")
-            valid_desc.append(desc)
+                if c.facts.get("penalty_if_missed"):
+                    desc["penalty_if_missed"] = c.facts.get("penalty_if_missed")
+                if c.facts.get("deadline_minute"):
+                    desc["deadline_minute"] = c.facts.get("deadline_minute")
+            if c.facts.get("satisfies_constraint_type"):
+                desc["satisfies_constraint_type"] = c.facts.get("satisfies_constraint_type")
+            return desc
 
+        valid_desc = [_build_desc(c) for c in context.valid_candidates]
         soft_desc = []
         for c in context.soft_risk_candidates:
-            desc = {
-                "candidate_id": c.candidate_id,
-                "action": c.action,
-                "risk_reasons": list(c.soft_risk_reasons),
-            }
-            summary = context.candidate_summaries.get(c.candidate_id)
-            if summary:
-                desc["estimated_net_after_penalty"] = summary.estimated_net_after_penalty
-                desc["penalty_exposure"] = summary.estimated_penalty_exposure
-                desc["satisfies_constraints"] = summary.satisfies_constraints
-                if summary.constraint_impacts:
-                    desc["constraint_impacts"] = list(summary.constraint_impacts)
-            if c.action == "take_order":
-                desc["cargo_id"] = c.params.get("cargo_id", "")
-                desc["price"] = c.facts.get("price", 0)
-                desc["estimated_net"] = c.facts.get("estimated_net", 0)
-            elif c.action == "wait":
-                desc["duration_minutes"] = c.params.get("duration_minutes", 0)
-                if c.facts.get("satisfies_continuous_rest"):
-                    desc["satisfies_continuous_rest"] = True
-            elif c.action == "reposition":
-                desc["latitude"] = c.params.get("latitude")
-                desc["longitude"] = c.params.get("longitude")
+            desc = _build_desc(c)
+            desc["risk_reasons"] = list(c.soft_risk_reasons)
             soft_desc.append(desc)
 
         user_content = {

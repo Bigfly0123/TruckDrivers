@@ -47,6 +47,7 @@ class CandidateFactBuilder:
         rules: tuple[PreferenceRule, ...],
         items: list[dict[str, Any]],
         constraints: tuple[Any, ...] = (),
+        runtime: Any | None = None,
     ) -> list[Candidate]:
         candidates: list[Candidate] = []
 
@@ -74,7 +75,7 @@ class CandidateFactBuilder:
             if candidate is not None:
                 candidates.append(candidate)
 
-        constraint_candidates = self._generate_constraint_candidates(state, constraints)
+        constraint_candidates = self._generate_constraint_candidates(state, constraints, runtime, items)
         candidates.extend(constraint_candidates)
 
         return candidates
@@ -169,15 +170,28 @@ class CandidateFactBuilder:
         self,
         state: DecisionState,
         constraints: tuple[Any, ...],
+        runtime: Any | None = None,
+        items: list[dict[str, Any]] | None = None,
     ) -> list[Candidate]:
         candidates: list[Candidate] = []
         existing_ids: set[str] = set()
-        for idx, c in enumerate(constraints):
+        visible_cargo_ids: set[str] = set()
+        if items:
+            for item in items:
+                cargo = item.get("cargo") if isinstance(item.get("cargo"), dict) else {}
+                cid = str(cargo.get("cargo_id") or "").strip()
+                if cid:
+                    visible_cargo_ids.add(cid)
+
+        for c in constraints:
             if not hasattr(c, "constraint_type"):
                 continue
             ct = c.constraint_type
+
             if ct == "specific_cargo" and c.cargo_ids:
                 for cid in c.cargo_ids:
+                    if cid not in visible_cargo_ids:
+                        continue
                     candidate_id = f"specific_cargo_{cid}"
                     if candidate_id in existing_ids:
                         continue
@@ -186,32 +200,133 @@ class CandidateFactBuilder:
                         candidate_id=candidate_id,
                         action="take_order",
                         params={"cargo_id": cid},
-                        source="constraint",
-                        facts={"constraint_type": ct, "constraint_id": c.constraint_id},
+                        source="constraint_satisfy",
+                        facts={
+                            "constraint_type": ct,
+                            "constraint_id": c.constraint_id,
+                            "penalty_if_missed": max(c.penalty_amount, 500.0),
+                        },
                     ))
+
             elif ct == "continuous_rest":
-                candidate_id = f"wait_rest_{c.required_minutes or 480}"
-                if candidate_id not in existing_ids:
-                    existing_ids.add(candidate_id)
-                    minutes = c.required_minutes or 480
-                    candidates.append(Candidate(
-                        candidate_id=candidate_id,
-                        action="wait",
-                        params={"duration_minutes": min(minutes, 60)},
-                        source="constraint",
-                        facts={"constraint_type": ct, "satisfies_continuous_rest": True, "required_minutes": minutes},
-                    ))
+                remaining = c.required_minutes or 480
+                current_streak = 0
+                if runtime is not None and hasattr(runtime, "rest"):
+                    remaining = runtime.rest.remaining_rest_minutes_by_constraint.get(c.constraint_id, remaining)
+                    current_streak = runtime.rest.current_rest_streak_minutes
+                if remaining > 0:
+                    candidate_id = f"continue_rest_{c.constraint_id}"
+                    if candidate_id not in existing_ids:
+                        existing_ids.add(candidate_id)
+                        duration = min(60, max(1, remaining))
+                        candidates.append(Candidate(
+                            candidate_id=candidate_id,
+                            action="wait",
+                            params={"duration_minutes": duration},
+                            source="constraint_satisfy",
+                            facts={
+                                "satisfies_constraint_type": "continuous_rest",
+                                "constraint_id": c.constraint_id,
+                                "current_rest_streak_minutes": current_streak,
+                                "required_minutes": c.required_minutes or 480,
+                                "remaining_rest_minutes": remaining,
+                                "remaining_rest_minutes_after_wait": max(0, remaining - duration),
+                                "avoids_estimated_penalty": max(c.penalty_amount, 100.0) * max(1, remaining / 60),
+                            },
+                        ))
+
+            elif ct == "forbid_action_in_time_window":
+                if runtime is not None and hasattr(runtime, "time_windows"):
+                    tw_state = runtime.time_windows
+                    if tw_state.active_forbidden_windows:
+                        for win in tw_state.active_forbidden_windows:
+                            end_minute = win.get("end_minute_of_day")
+                            if end_minute is None:
+                                continue
+                            if c.time_window is not None and c.time_window.start_minute_of_day > c.time_window.end_minute_of_day:
+                                if state.minute_of_day >= c.time_window.start_minute_of_day:
+                                    end_abs = state.current_minute - state.minute_of_day + end_minute + 1440
+                                else:
+                                    end_abs = state.current_minute - state.minute_of_day + end_minute
+                            else:
+                                end_abs = state.current_minute - state.minute_of_day + end_minute
+                            wait_duration = max(1, min(60, end_abs - state.current_minute))
+                            candidate_id = f"wait_until_window_end_{c.constraint_id}"
+                            if candidate_id in existing_ids:
+                                continue
+                            existing_ids.add(candidate_id)
+                            candidates.append(Candidate(
+                                candidate_id=candidate_id,
+                                action="wait",
+                                params={"duration_minutes": wait_duration},
+                                source="constraint_satisfy",
+                                facts={
+                                    "satisfies_constraint_type": "forbid_action_in_time_window",
+                                    "constraint_id": c.constraint_id,
+                                    "window_end_minute": end_abs,
+                                    "avoids_estimated_penalty": max(c.penalty_amount, 200.0),
+                                },
+                            ))
+
             elif ct == "be_at_location_by_deadline" and c.point is not None:
-                candidate_id = f"go_to_{c.constraint_id}"
+                candidate_id = f"go_to_location_by_deadline_{c.constraint_id}"
                 if candidate_id not in existing_ids:
                     existing_ids.add(candidate_id)
                     candidates.append(Candidate(
                         candidate_id=candidate_id,
                         action="reposition",
                         params={"latitude": c.point.latitude, "longitude": c.point.longitude},
-                        source="constraint",
-                        facts={"constraint_type": ct, "target_point": (c.point.latitude, c.point.longitude)},
+                        source="constraint_satisfy",
+                        facts={
+                            "satisfies_constraint_type": "be_at_location_by_deadline",
+                            "constraint_id": c.constraint_id,
+                            "deadline_minute": c.deadline_minute,
+                            "penalty_if_missed": max(c.penalty_amount, 500.0),
+                        },
                     ))
+
+            elif ct == "ordered_steps":
+                steps = c.metadata.get("steps") if c.metadata else None
+                if steps:
+                    next_step = steps[0] if isinstance(steps, (tuple, list)) else None
+                    if next_step is not None:
+                        step_action = getattr(next_step, "action", "visit")
+                        if step_action == "visit" and hasattr(next_step, "point") and next_step.point is not None:
+                            candidate_id = f"ordered_step_visit_{c.constraint_id}_0"
+                            if candidate_id not in existing_ids:
+                                existing_ids.add(candidate_id)
+                                candidates.append(Candidate(
+                                    candidate_id=candidate_id,
+                                    action="reposition",
+                                    params={"latitude": next_step.point.latitude, "longitude": next_step.point.longitude},
+                                    source="constraint_satisfy",
+                                    facts={
+                                        "satisfies_constraint_type": "ordered_steps",
+                                        "constraint_id": c.constraint_id,
+                                        "step_type": "visit_location",
+                                        "step_index": 0,
+                                        "penalty_if_missed": max(c.penalty_amount, 500.0),
+                                    },
+                                ))
+                        elif step_action in {"wait", "stay"} and hasattr(next_step, "stay_minutes"):
+                            candidate_id = f"ordered_step_stay_{c.constraint_id}_0"
+                            if candidate_id not in existing_ids:
+                                existing_ids.add(candidate_id)
+                                duration = min(60, max(1, next_step.stay_minutes or 60))
+                                candidates.append(Candidate(
+                                    candidate_id=candidate_id,
+                                    action="wait",
+                                    params={"duration_minutes": duration},
+                                    source="constraint_satisfy",
+                                    facts={
+                                        "satisfies_constraint_type": "ordered_steps",
+                                        "constraint_id": c.constraint_id,
+                                        "step_type": "stay_duration",
+                                        "step_index": 0,
+                                        "penalty_if_missed": max(c.penalty_amount, 500.0),
+                                    },
+                                ))
+
         return candidates
 
     def estimate_scan_cost(self, items_count: int) -> int:

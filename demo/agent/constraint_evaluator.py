@@ -36,6 +36,7 @@ class ConstraintEvaluator:
         candidate: Candidate,
         constraints: tuple[ConstraintSpec, ...],
         state: DecisionState,
+        runtime: Any | None = None,
     ) -> EvaluationResult:
         hard: list[str] = []
         soft: list[str] = []
@@ -44,7 +45,7 @@ class ConstraintEvaluator:
         satisfies_all = True
 
         for c in constraints:
-            impact = self._evaluate_one(candidate, c, state)
+            impact = self._evaluate_one(candidate, c, state, runtime)
             if impact is not None:
                 impacts.append(impact)
                 if impact.status == "violation":
@@ -72,6 +73,7 @@ class ConstraintEvaluator:
         candidate: Candidate,
         constraint: ConstraintSpec,
         state: DecisionState,
+        runtime: Any | None = None,
     ) -> ConstraintImpact | None:
         if constraint.actions and candidate.action not in constraint.actions:
             return None
@@ -79,6 +81,8 @@ class ConstraintEvaluator:
         handler = self._HANDLERS.get(constraint.constraint_type)
         if handler is None:
             return None
+        if constraint.constraint_type == "continuous_rest":
+            return handler(self, candidate, constraint, state, runtime)
         return handler(self, candidate, constraint, state)
 
     def _eval_forbid_cargo(
@@ -138,29 +142,43 @@ class ConstraintEvaluator:
         candidate: Candidate,
         constraint: ConstraintSpec,
         state: DecisionState,
+        runtime: Any | None = None,
     ) -> ConstraintImpact | None:
+        current_streak = 0
+        max_streak = 0
+        remaining = constraint.required_minutes or 480
+
+        if runtime is not None and hasattr(runtime, "rest"):
+            rest_state = runtime.rest
+            current_streak = rest_state.current_rest_streak_minutes
+            max_streak = rest_state.max_rest_streak_today
+            remaining = rest_state.remaining_rest_minutes_by_constraint.get(constraint.constraint_id, remaining)
+
         if candidate.action == "wait":
+            new_streak = current_streak + candidate.params.get("duration_minutes", 0)
+            new_remaining = max(0, remaining - candidate.params.get("duration_minutes", 0))
             return ConstraintImpact(
                 constraint_id=constraint.constraint_id,
                 constraint_type=constraint.constraint_type,
                 status="satisfies",
                 penalty=0.0,
-                detail="wait contributes to rest",
+                detail=f"rest_streak {current_streak} -> {new_streak}, remaining={new_remaining}",
             )
 
-        if candidate.action != "take_order":
+        if candidate.action not in {"take_order", "reposition"}:
             return None
 
-        required = constraint.required_minutes or 480
-        today_wait = sum(end - start for start, end in state.wait_intervals if start // 1440 == state.current_day)
-        if today_wait < required:
-            penalty = max(constraint.penalty_amount, 100.0) * max(1, (required - today_wait) / 60)
+        if max_streak >= (constraint.required_minutes or 480):
+            return None
+
+        if remaining > 0:
+            penalty = max(constraint.penalty_amount, 100.0) * max(1, remaining / 60)
             return ConstraintImpact(
                 constraint_id=constraint.constraint_id,
                 constraint_type=constraint.constraint_type,
                 status="risk",
                 penalty=round(penalty, 2),
-                detail=f"today_rest={today_wait}min, need={required}min",
+                detail=f"current_streak={current_streak}, max_streak={max_streak}, remaining={remaining}, action={candidate.action} breaks rest",
             )
         return None
 

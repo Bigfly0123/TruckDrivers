@@ -7,6 +7,7 @@ from typing import Any
 
 from agent.agent_models import Candidate, DecisionState
 from agent.constraint_evaluator import ConstraintEvaluator, ConstraintImpact, EvaluationResult
+from agent.constraint_runtime import compute_constraint_runtime_state, ConstraintRuntimeState
 from agent.llm_decision_advisor import AdvisorContext, AdvisorDecision, CandidateSummary, LlmDecisionAdvisor
 from agent.planner import CandidateFactBuilder, estimate_scan_cost
 from agent.preference_compiler import PreferenceCompiler
@@ -50,14 +51,26 @@ class ModelDecisionService:
             empty_query=len(items) == 0,
         )
 
+        visible_cargo_ids: set[str] = set()
+        for item in items:
+            cargo = item.get("cargo") if isinstance(item.get("cargo"), dict) else {}
+            cid = str(cargo.get("cargo_id") or "").strip()
+            if cid:
+                visible_cargo_ids.add(cid)
+
+        runtime = compute_constraint_runtime_state(
+            state.history_records, state.current_minute, constraints, visible_cargo_ids
+        )
+
         log_entry: dict[str, Any] = {"driver_id": driver_id, "step": len(state.history_records)}
         try:
-            all_candidates = self._planner.build_candidate_pool(state, rules, items, constraints)
-            all_candidates = self._evaluate_constraints(all_candidates, constraints, state)
+            all_candidates = self._planner.build_candidate_pool(state, rules, items, constraints, runtime)
+            all_candidates = self._evaluate_constraints(all_candidates, constraints, state, runtime)
 
             valid_candidates = [c for c in all_candidates if not c.hard_invalid_reasons and not c.soft_risk_reasons]
             soft_risk_candidates = [c for c in all_candidates if not c.hard_invalid_reasons and c.soft_risk_reasons]
             hard_invalid_candidates = [c for c in all_candidates if c.hard_invalid_reasons]
+            satisfy_candidates = [c for c in all_candidates if c.source == "constraint_satisfy"]
 
             log_entry.update({
                 "day": state.current_day,
@@ -67,6 +80,15 @@ class ModelDecisionService:
                 "valid_count": len(valid_candidates),
                 "soft_risk_count": len(soft_risk_candidates),
                 "hard_invalid_count": len(hard_invalid_candidates),
+                "satisfy_candidate_count": len(satisfy_candidates),
+                "satisfy_candidate_types": list({
+                    str(c.facts.get("satisfies_constraint_type") or c.facts.get("constraint_type") or "")
+                    for c in satisfy_candidates
+                }),
+                "rest_state": {
+                    "current_rest_streak": runtime.rest.current_rest_streak_minutes,
+                    "max_rest_streak_today": runtime.rest.max_rest_streak_today,
+                } if runtime else {},
             })
 
             executable = valid_candidates + soft_risk_candidates
@@ -143,12 +165,13 @@ class ModelDecisionService:
         candidates: list[Candidate],
         constraints: tuple[ConstraintSpec, ...],
         state: DecisionState,
+        runtime: Any | None = None,
     ) -> list[Candidate]:
         if not constraints:
             return candidates
         evaluated: list[Candidate] = []
         for c in candidates:
-            result = self._constraint_evaluator.evaluate(c, constraints, state)
+            result = self._constraint_evaluator.evaluate(c, constraints, state, runtime)
             merged_hard = c.hard_invalid_reasons + result.hard_invalid_reasons
             merged_soft = c.soft_risk_reasons + result.soft_risk_reasons
             penalty = result.estimated_penalty_exposure
