@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from typing import Any
+
+from agent.phase3.agent_state import AgentState
+
+
+class DiagnosticTool:
+    """Builds diagnostic facts only. It does not make decisions."""
+
+    def build_decision_diagnosis(self, state: AgentState) -> dict[str, Any]:
+        constraint = state.debug.get("constraint_summary", {})
+        advisor = state.debug.get("advisor_summary", {})
+        safety = state.debug.get("safety_summary", {})
+        selected_action = advisor.get("selected_candidate_action")
+        final_action_name = (state.final_action or {}).get("action")
+        selected_is_wait = selected_action == "wait" or final_action_name == "wait"
+        has_profitable = int(constraint.get("valid_profitable_order_count") or 0) > 0
+        best_net = constraint.get("best_valid_order_net")
+        selected_net = advisor.get("selected_candidate_estimated_net")
+        gap = None
+        if best_net is not None and selected_net is not None:
+            gap = float(best_net) - float(selected_net)
+        diagnosis = {
+            "decision_type": final_action_name or selected_action,
+            "selected_is_order": selected_action == "take_order" or final_action_name == "take_order",
+            "selected_is_wait": selected_is_wait,
+            "selected_is_reposition": selected_action == "reposition" or final_action_name == "reposition",
+            "why_no_order_selected": _why_no_order_selected(state, constraint, selected_is_wait),
+            "why_wait_selected": _why_wait_selected(state, constraint, selected_is_wait),
+            "why_fallback_used": state.fallback_reason if state.fallback_used else None,
+            "has_valid_profitable_order": has_profitable,
+            "best_valid_order_id": constraint.get("best_valid_order_id"),
+            "best_valid_order_net": best_net,
+            "selected_candidate_id": state.selected_candidate_id,
+            "selected_candidate_net": selected_net,
+            "selected_vs_best_valid_net_gap": gap,
+            "dominant_hard_invalid_reason": constraint.get("dominant_hard_invalid_reason"),
+            "hard_invalid_reason_counts": constraint.get("hard_invalid_reason_counts", {}),
+            "advisor_chose_wait_despite_profitable_order": bool(selected_is_wait and has_profitable and not state.fallback_used),
+            "safety_rejected_advisor_choice": bool(safety.get("safety_rejected") and state.fallback_used),
+            "candidate_pool_empty": len(state.evaluated_candidates or state.raw_candidates) == 0,
+            "only_wait_candidates_available": _only_wait_candidates_available(state),
+        }
+        state.diagnostics["decision_diagnosis"] = diagnosis
+        state.debug["decision_diagnosis"] = diagnosis
+        state.tool_summaries["diagnostic_tool"] = diagnosis
+        return diagnosis
+
+
+def _why_no_order_selected(state: AgentState, constraint: dict[str, Any], selected_is_wait: bool) -> str | None:
+    if state.fallback_used:
+        return "fallback_used"
+    if not selected_is_wait:
+        return None
+    if int(constraint.get("valid_order_count") or 0) == 0:
+        return "no_valid_order"
+    if int(constraint.get("valid_profitable_order_count") or 0) == 0:
+        return "no_profitable_valid_order"
+    return "advisor_selected_wait_despite_profitable_order"
+
+
+def _why_wait_selected(state: AgentState, constraint: dict[str, Any], selected_is_wait: bool) -> str | None:
+    if not selected_is_wait:
+        return None
+    if state.fallback_used:
+        return state.fallback_reason
+    if int(constraint.get("valid_profitable_order_count") or 0) == 0:
+        return "no_profitable_valid_order"
+    return "advisor_tradeoff_or_prompt_behavior"
+
+
+def _only_wait_candidates_available(state: AgentState) -> bool:
+    executable = state.valid_candidates + state.soft_risk_candidates
+    return bool(executable) and all(c.action == "wait" for c in executable)

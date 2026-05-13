@@ -61,6 +61,10 @@ def constraint_summary(state: AgentState) -> dict[str, Any]:
 def final_decision_summary(state: AgentState) -> dict[str, Any]:
     selected_action = state.selected_candidate.action if state.selected_candidate is not None else None
     hard_reason_counts = hard_invalid_reason_counts(state.hard_invalid_candidates)
+    constraint = state.debug.get("constraint_summary", {})
+    advisor = state.debug.get("advisor_summary", {})
+    safety = state.debug.get("safety_summary", {})
+    diagnosis = state.debug.get("decision_diagnosis", {})
     return {
         "driver_id": state.driver_id,
         "step_id": state.step_id,
@@ -75,16 +79,32 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "valid_count": len(state.valid_candidates),
         "soft_risk_count": len(state.soft_risk_candidates),
         "hard_invalid_count": len(state.hard_invalid_candidates),
+        "valid_order_count": constraint.get("valid_order_count"),
+        "valid_profitable_order_count": constraint.get("valid_profitable_order_count"),
+        "best_valid_order_id": constraint.get("best_valid_order_id"),
+        "best_valid_order_net": constraint.get("best_valid_order_net"),
+        "best_soft_risk_order_id": constraint.get("best_soft_risk_order_id"),
+        "best_soft_risk_order_net_after_penalty": constraint.get("best_soft_risk_order_net_after_penalty"),
+        "dominant_hard_invalid_reason": constraint.get("dominant_hard_invalid_reason"),
         "hard_invalid_reason_counts": hard_reason_counts,
         "top_hard_invalid_reasons": hard_reason_counts,
         "sample_hard_invalid_candidates": sample_hard_invalid_candidates(state.hard_invalid_candidates),
         "advisor_candidate_count": state.advisor_context.get("candidate_count", 0),
         "selected_candidate_id": state.selected_candidate_id,
+        "selected_candidate_source": advisor.get("selected_candidate_source"),
         "selected_action": selected_action,
+        "selected_candidate_action": advisor.get("selected_candidate_action") or selected_action,
+        "selected_candidate_estimated_net": advisor.get("selected_candidate_estimated_net"),
+        "selected_candidate_penalty_exposure": advisor.get("selected_candidate_penalty_exposure"),
+        "selected_candidate_estimated_net_after_penalty": advisor.get("selected_candidate_estimated_net_after_penalty"),
         "selected_reason": state.advisor_result.get("reason"),
+        "advisor_reason": advisor.get("advisor_reason") or state.advisor_result.get("reason"),
         "safety_passed": state.safety_result.get("accepted"),
         "safety_accepted": state.safety_result.get("accepted"),
+        "safety_rejected": safety.get("safety_rejected"),
+        "safety_reject_reason": safety.get("safety_reject_reason"),
         "fallback_used": state.fallback_used,
         "fallback_reason": state.fallback_reason,
         "final_action": state.final_action,
+        "diagnosis": diagnosis,
     }

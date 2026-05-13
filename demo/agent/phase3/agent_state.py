@@ -45,6 +45,8 @@ class AgentState:
 
     trace: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, Any]] = field(default_factory=list)
+    tool_summaries: dict[str, dict[str, Any]] = field(default_factory=dict)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
     debug: dict[str, Any] = field(default_factory=dict)
 
     def mark_fallback(self, reason: str, action: dict[str, Any]) -> None:

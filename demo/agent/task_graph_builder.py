@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+"""
+LEGACY MODULE.
+
+Not used by the default Phase 3 graph workflow. Kept for rollback,
+comparison, and historical reference. Do not reintroduce it as a
+decision-control component.
+"""
+
 import logging
 import hashlib
 
