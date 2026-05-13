@@ -5,6 +5,7 @@ from typing import Any
 
 from agent.agent_models import Candidate, DecisionState, PreferenceRule
 from agent.constraint_runtime import ConstraintRuntimeState
+from agent.phase3.planning.day_plan import DayPlan
 from agent.preference_constraints import ConstraintSpec
 
 
@@ -32,6 +33,9 @@ class AgentState:
     valid_candidates: list[Candidate] = field(default_factory=list)
     soft_risk_candidates: list[Candidate] = field(default_factory=list)
     hard_invalid_candidates: list[Candidate] = field(default_factory=list)
+
+    day_plan: DayPlan | None = None
+    day_plan_generated_this_step: bool = False
 
     advisor_context: dict[str, Any] = field(default_factory=dict)
     advisor_result: dict[str, Any] = field(default_factory=dict)

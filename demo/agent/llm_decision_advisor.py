@@ -40,6 +40,7 @@ class AdvisorContext:
     recent_actions: list[dict[str, Any]] = field(default_factory=list)
     trigger_reason: str = "normal_candidate_decision"
     candidate_summaries: dict[str, CandidateSummary] = field(default_factory=dict)
+    day_plan: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,11 @@ class LlmDecisionAdvisor:
             "- Compare order profit against penalty exposure and penalty avoidance.\n"
             "- Choose the candidate with the best expected net outcome, not simply the highest immediate freight income.\n"
             "- Prefer candidates with lower penalty_exposure when profits are similar.\n\n"
+            "DAY PLAN GUIDANCE:\n"
+            "- day_plan is strategic guidance only.\n"
+            "- It does not override hard constraints or SafetyGate.\n"
+            "- It does not authorize actions outside the candidates list.\n"
+            "- Use it to break trade-offs among available candidate_id options.\n\n"
             "CONTINUOUS REST:\n"
             "- A rest candidate may be partial progress, not full satisfaction.\n"
             "- actually_satisfies_after_this_wait=false means this wait extends the streak but does not satisfy the full continuous-rest requirement yet.\n"
@@ -169,6 +175,7 @@ class LlmDecisionAdvisor:
             "completed_orders": state.completed_order_count,
             "monthly_deadhead_km": round(state.monthly_deadhead_km, 1),
             "preferences": context.raw_preferences,
+            "day_plan": context.day_plan,
             "valid_candidates": valid_desc,
             "soft_risk_candidates": soft_desc,
             "recent_actions": context.recent_actions[-5:],

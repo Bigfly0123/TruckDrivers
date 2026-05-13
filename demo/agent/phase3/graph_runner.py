@@ -44,14 +44,20 @@ class GraphRunner:
 
 
 def build_default_graph(api: SimulationApiPort) -> GraphRunner:
+    from agent.phase3.agents.strategic_planner_agent import StrategicPlannerAgent
     from agent.phase3.graph_nodes.advisor_node import AdvisorNode
     from agent.phase3.graph_nodes.candidate_node import CandidateNode
     from agent.phase3.graph_nodes.constraint_node import ConstraintNode
     from agent.phase3.graph_nodes.emit_node import EmitNode
     from agent.phase3.graph_nodes.observe_node import ObserveNode
+    from agent.phase3.graph_nodes.planning_node import PlanningNode
     from agent.phase3.graph_nodes.preference_node import PreferenceNode
     from agent.phase3.graph_nodes.runtime_node import RuntimeNode
     from agent.phase3.graph_nodes.safety_node import SafetyNode
+    from agent.phase3.planning.day_plan_store import DayPlanStore
+
+    day_plan_store = DayPlanStore()
+    strategic_planner = StrategicPlannerAgent(api)
 
     return GraphRunner(
         nodes=[
@@ -60,6 +66,7 @@ def build_default_graph(api: SimulationApiPort) -> GraphRunner:
             RuntimeNode(),
             CandidateNode(),
             ConstraintNode(),
+            PlanningNode(strategic_planner, day_plan_store),
             AdvisorNode(api),
             SafetyNode(),
             EmitNode(),

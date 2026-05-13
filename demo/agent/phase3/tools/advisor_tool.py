@@ -26,7 +26,12 @@ class AdvisorTool:
         if state.decision_state is None:
             raise ValueError("advisor tool requires decision_state")
         executable = state.valid_candidates + state.soft_risk_candidates
-        state.advisor_context = {"candidate_count": len(executable)}
+        day_plan_context = state.day_plan.to_advisor_context() if state.day_plan is not None else {}
+        state.advisor_context = {
+            "candidate_count": len(executable),
+            "day_plan": day_plan_context,
+            "has_day_plan": bool(day_plan_context),
+        }
         if not executable:
             action, reason = fallback_wait(state.decision_state, "no_candidates_available")
             state.mark_fallback(reason, action)
@@ -46,6 +51,7 @@ class AdvisorTool:
                 recent_actions=_recent_actions(state),
                 trigger_reason="normal_candidate_decision",
                 candidate_summaries=candidate_summaries,
+                day_plan=day_plan_context,
             )
         )
         if result is None:
@@ -81,6 +87,8 @@ class AdvisorTool:
             "selected_candidate_estimated_net_after_penalty": _fact_float(selected, "estimated_net_after_penalty"),
             "advisor_reason": state.advisor_result.get("reason"),
             "candidate_pool_size_sent_to_advisor": state.advisor_context.get("candidate_count", 0),
+            "day_plan_primary_goal": (state.advisor_context.get("day_plan") or {}).get("primary_goal"),
+            "day_plan_guidance_count": len((state.advisor_context.get("day_plan") or {}).get("advisor_guidance") or []),
             "fallback_used": state.fallback_used,
             "fallback_reason": state.fallback_reason,
         }

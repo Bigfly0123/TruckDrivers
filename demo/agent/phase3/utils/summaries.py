@@ -65,6 +65,7 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
     advisor = state.debug.get("advisor_summary", {})
     safety = state.debug.get("safety_summary", {})
     diagnosis = state.debug.get("decision_diagnosis", {})
+    day_plan = state.day_plan.to_advisor_context() if state.day_plan is not None else {}
     return {
         "driver_id": state.driver_id,
         "step_id": state.step_id,
@@ -90,6 +91,12 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "top_hard_invalid_reasons": hard_reason_counts,
         "sample_hard_invalid_candidates": sample_hard_invalid_candidates(state.hard_invalid_candidates),
         "advisor_candidate_count": state.advisor_context.get("candidate_count", 0),
+        "day_plan_summary": day_plan.get("strategy_summary"),
+        "day_plan_primary_goal": day_plan.get("primary_goal"),
+        "day_plan_risk_focus": day_plan.get("risk_focus"),
+        "day_plan_rest_strategy": day_plan.get("rest_strategy"),
+        "day_plan_advisor_guidance": day_plan.get("advisor_guidance"),
+        "day_plan_generated_this_step": state.day_plan_generated_this_step,
         "selected_candidate_id": state.selected_candidate_id,
         "selected_candidate_source": advisor.get("selected_candidate_source"),
         "selected_action": selected_action,

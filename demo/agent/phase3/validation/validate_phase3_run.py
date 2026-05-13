@@ -45,8 +45,10 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         and d["diagnosis"].get("selected_vs_best_valid_net_gap") is not None
     ]
 
+    day_plan_stats = _day_plan_stats(graph_events, decisions)
+
     lines = [
-        "# Phase 3.0.5 Validation Report",
+        "# Phase 3.1 Validation Report",
         "",
         "## Run Summary",
         f"- drivers: {len(drivers)}",
@@ -60,6 +62,11 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"- final_action missing: {final_missing_count}",
         f"- selected_vs_best_valid_net_gap avg: {round(mean(gaps), 2) if gaps else 'n/a'}",
         f"- selected_vs_best_valid_net_gap max: {round(max(gaps), 2) if gaps else 'n/a'}",
+        f"- day_plan_created_count: {day_plan_stats['created_count']}",
+        f"- day_plan_reused_count: {day_plan_stats['reused_count']}",
+        f"- decisions_with_day_plan: {day_plan_stats['decisions_with_day_plan']}",
+        f"- decisions_missing_day_plan: {day_plan_stats['decisions_missing_day_plan']}",
+        f"- planner_fallback_plan_count: {day_plan_stats['fallback_plan_count']}",
         "",
         "## Node Errors",
     ]
@@ -83,6 +90,14 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     else:
         lines.append("| all | none | 0 |")
 
+    lines.extend(["", "## DayPlan Summary", "| driver | created | reused | missing | fallback_plan |", "|---|---:|---:|---:|---:|"])
+    for driver in drivers:
+        created = day_plan_stats["created_by_driver"].get(driver, 0)
+        reused = day_plan_stats["reused_by_driver"].get(driver, 0)
+        missing = day_plan_stats["missing_by_driver"].get(driver, 0)
+        fallback = day_plan_stats["fallback_by_driver"].get(driver, 0)
+        lines.append(f"| {driver} | {created} | {reused} | {missing} | {fallback} |")
+
     lines.extend(["", "## Blocking Constraint Summary", "| driver | reason | count |", "|---|---|---:|"])
     if hard_reason_counts:
         for (driver, reason), count in sorted(hard_reason_counts.items(), key=lambda item: (-item[1], item[0])):
@@ -90,7 +105,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     else:
         lines.append("| all | none | 0 |")
 
-    lines.extend(["", "## Phase 3.0.5 Acceptance"])
+    lines.extend(["", "## Phase 3.1 Acceptance"])
     checks = {
         "graph events present": bool(graph_events),
         "decision summaries present": bool(decisions),
@@ -98,11 +113,14 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         "diagnosis present": any(isinstance(d.get("diagnosis"), dict) and d.get("diagnosis") for d in decisions),
         "no blocking node errors": event_counts.get("node_error", 0) == 0,
         "final action present": final_missing_count == 0,
+        "planning node executed": event_counts.get("planning_summary", 0) > 0,
+        "day plan present in decisions": bool(decisions) and day_plan_stats["decisions_missing_day_plan"] == 0,
+        "day plan events present": day_plan_stats["created_count"] > 0 or day_plan_stats["reused_count"] > 0,
     }
     for name, passed in checks.items():
         lines.append(f"- {name}: {'pass' if passed else 'fail'}")
     ready = all(checks.values())
-    lines.append(f"- ready for Phase 3.1: {'yes' if ready else 'no'}")
+    lines.append(f"- ready for Phase 3.2: {'yes' if ready else 'no'}")
     lines.append("")
     return "\n".join(lines)
 
@@ -166,6 +184,41 @@ def _hard_reason_counts(decisions: list[dict[str, Any]]) -> Counter[tuple[str, s
             except (TypeError, ValueError):
                 continue
     return counts
+
+
+def _day_plan_stats(graph_events: list[dict[str, Any]], decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    created_by_driver: Counter[str] = Counter()
+    reused_by_driver: Counter[str] = Counter()
+    fallback_by_driver: Counter[str] = Counter()
+    missing_by_driver: Counter[str] = Counter()
+    for event in graph_events:
+        event_name = event.get("event")
+        driver = str(event.get("driver_id") or "unknown")
+        summary = event.get("summary") if isinstance(event.get("summary"), dict) else {}
+        if event_name == "day_plan_created":
+            created_by_driver[driver] += 1
+        if event_name == "day_plan_reused":
+            reused_by_driver[driver] += 1
+        if event_name in {"day_plan_created", "day_plan_reused"} and summary.get("fallback_used"):
+            fallback_by_driver[driver] += 1
+    decisions_with_day_plan = 0
+    for decision in decisions:
+        driver = str(decision.get("driver_id") or "unknown")
+        if decision.get("day_plan_summary"):
+            decisions_with_day_plan += 1
+        else:
+            missing_by_driver[driver] += 1
+    return {
+        "created_count": sum(created_by_driver.values()),
+        "reused_count": sum(reused_by_driver.values()),
+        "decisions_with_day_plan": decisions_with_day_plan,
+        "decisions_missing_day_plan": sum(missing_by_driver.values()),
+        "fallback_plan_count": sum(fallback_by_driver.values()),
+        "created_by_driver": created_by_driver,
+        "reused_by_driver": reused_by_driver,
+        "missing_by_driver": missing_by_driver,
+        "fallback_by_driver": fallback_by_driver,
+    }
 
 
 if __name__ == "__main__":
