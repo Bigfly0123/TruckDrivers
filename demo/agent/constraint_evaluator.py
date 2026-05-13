@@ -144,44 +144,70 @@ class ConstraintEvaluator:
         state: DecisionState,
         runtime: Any | None = None,
     ) -> ConstraintImpact | None:
+        required = constraint.required_minutes or 480
         current_streak = 0
         max_streak = 0
-        remaining = constraint.required_minutes or 480
 
         if runtime is not None and hasattr(runtime, "rest"):
             rest_state = runtime.rest
             current_streak = rest_state.current_rest_streak_minutes
             max_streak = rest_state.max_rest_streak_today
-            remaining = rest_state.remaining_rest_minutes_by_constraint.get(constraint.constraint_id, remaining)
 
         if candidate.action == "wait":
             wait_minutes = int(candidate.params.get("duration_minutes", 0) or 0)
             new_streak = current_streak + wait_minutes
-            new_remaining = max(0, remaining - wait_minutes)
+            new_best_streak = max(max_streak, new_streak)
+            new_remaining = max(0, required - new_best_streak)
             return ConstraintImpact(
                 constraint_id=constraint.constraint_id,
                 constraint_type=constraint.constraint_type,
                 status="satisfies" if new_remaining == 0 else "progress",
                 penalty=0.0,
-                detail=f"rest_streak {current_streak} -> {new_streak}, remaining={new_remaining}",
+                detail=f"rest_streak {current_streak} -> {new_streak}, max_streak={new_best_streak}, remaining={new_remaining}",
             )
 
         if candidate.action not in {"take_order", "reposition"}:
             return None
 
-        if max_streak >= (constraint.required_minutes or 480):
+        if max_streak >= required:
             return None
 
-        if remaining > 0:
-            penalty = max(constraint.penalty_amount, 100.0) * max(1, remaining / 60)
-            return ConstraintImpact(
-                constraint_id=constraint.constraint_id,
-                constraint_type=constraint.constraint_type,
-                status="risk",
-                penalty=round(penalty, 2),
-                detail=f"current_streak={current_streak}, max_streak={max_streak}, remaining={remaining}, action={candidate.action} breaks rest",
-            )
-        return None
+        finish_minute = self._candidate_finish_minute(candidate, state)
+        day_end_minute = (state.current_day + 1) * 1440
+        remaining_day_minutes = max(0, day_end_minute - finish_minute)
+        if remaining_day_minutes >= required:
+            return None
+
+        penalty = max(constraint.penalty_amount, 100.0)
+        return ConstraintImpact(
+            constraint_id=constraint.constraint_id,
+            constraint_type=constraint.constraint_type,
+            status="risk",
+            penalty=round(penalty, 2),
+            detail=(
+                f"may_fail_continuous_rest_today: action={candidate.action}, "
+                f"finish_minute={finish_minute}, day_end_minute={day_end_minute}, "
+                f"remaining_day_minutes={remaining_day_minutes}, required={required}, "
+                f"max_streak={max_streak}"
+            ),
+        )
+
+    def _candidate_finish_minute(self, candidate: Candidate, state: DecisionState) -> int:
+        try:
+            return int(candidate.facts.get("finish_minute"))
+        except (TypeError, ValueError):
+            pass
+
+        if candidate.action == "take_order":
+            pickup = int(candidate.facts.get("pickup_minutes", 0) or 0)
+            duration = int(candidate.facts.get("estimated_duration_minutes", 0) or 0)
+            return state.current_minute + pickup + duration
+
+        if candidate.action == "reposition":
+            duration = int(candidate.facts.get("estimated_duration_minutes", 0) or 0)
+            return state.current_minute + duration
+
+        return state.current_minute
 
     def _eval_operate_within_area(
         self,

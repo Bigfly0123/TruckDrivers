@@ -213,34 +213,38 @@ class CandidateFactBuilder:
                     ))
 
             elif ct == "continuous_rest":
-                remaining = c.required_minutes or 480
+                required = c.required_minutes or 480
                 current_streak = 0
+                max_streak = 0
                 if runtime is not None and hasattr(runtime, "rest"):
-                    remaining = runtime.rest.remaining_rest_minutes_by_constraint.get(c.constraint_id, remaining)
                     current_streak = runtime.rest.current_rest_streak_minutes
-                if remaining > 0:
-                    candidate_id = f"continue_rest_{c.constraint_id}"
+                    max_streak = runtime.rest.max_rest_streak_today
+                if max_streak < required:
+                    rest_streak_after_wait = current_streak + 60
+                    max_streak_after_wait = max(max_streak, rest_streak_after_wait)
+                    remaining_after = max(0, required - max_streak_after_wait)
+                    completes = max_streak_after_wait >= required
+                    prefix = "continue_rest_60" if current_streak > 0 else "start_rest_60"
+                    candidate_id = f"{prefix}_{c.constraint_id}"
                     if candidate_id not in existing_ids:
                         existing_ids.add(candidate_id)
-                        duration = min(60, max(1, remaining))
-                        remaining_after = max(0, remaining - duration)
-                        completes = remaining_after == 0
-                        penalty = max(c.penalty_amount, 100.0) * max(1, remaining / 60)
+                        penalty = max(c.penalty_amount, 100.0)
                         candidates.append(Candidate(
                             candidate_id=candidate_id,
                             action="wait",
-                            params={"duration_minutes": duration},
+                            params={"duration_minutes": 60},
                             source="constraint_satisfy",
                             facts={
                                 "satisfies_constraint_type": "continuous_rest",
                                 "satisfy_status": "complete" if completes else "progress",
                                 "constraint_id": c.constraint_id,
                                 "current_rest_streak_minutes": current_streak,
-                                "required_minutes": c.required_minutes or 480,
-                                "remaining_rest_minutes": remaining,
-                                "adds_rest_minutes": duration,
+                                "max_rest_streak_today": max_streak,
+                                "required_minutes": required,
+                                "adds_rest_minutes": 60,
+                                "rest_streak_after_wait": rest_streak_after_wait,
                                 "remaining_rest_minutes_after_wait": remaining_after,
-                                "completes_continuous_rest": completes,
+                                "actually_satisfies_after_this_wait": completes,
                                 "avoids_estimated_penalty": penalty if completes else 0.0,
                                 "penalty_if_rest_not_completed": penalty,
                             },

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,8 @@ class ModelDecisionService:
                 "valid_count": len(valid_candidates),
                 "soft_risk_count": len(soft_risk_candidates),
                 "hard_invalid_count": len(hard_invalid_candidates),
+                "top_hard_invalid_reasons": self._top_hard_invalid_reasons(hard_invalid_candidates),
+                "sample_hard_invalid_candidates": self._sample_hard_invalid_candidates(hard_invalid_candidates),
                 "satisfy_candidate_count": len(satisfy_candidates),
                 "satisfy_candidate_types": list({
                     str(c.facts.get("satisfies_constraint_type") or c.facts.get("constraint_type") or "")
@@ -159,6 +162,29 @@ class ModelDecisionService:
             if c.candidate_id == candidate_id:
                 return c
         return None
+
+    def _top_hard_invalid_reasons(self, candidates: list[Candidate]) -> dict[str, int]:
+        counts: Counter[str] = Counter()
+        for candidate in candidates:
+            counts.update(str(reason) for reason in candidate.hard_invalid_reasons)
+        return dict(counts.most_common(10))
+
+    def _sample_hard_invalid_candidates(self, candidates: list[Candidate], limit: int = 5) -> list[dict[str, Any]]:
+        samples: list[dict[str, Any]] = []
+        for candidate in candidates[:limit]:
+            samples.append({
+                "candidate_id": candidate.candidate_id,
+                "action": candidate.action,
+                "source": candidate.source,
+                "cargo_id": candidate.params.get("cargo_id"),
+                "hard_invalid_reasons": list(candidate.hard_invalid_reasons),
+                "pickup_arrival_minute": candidate.facts.get("pickup_arrival_minute"),
+                "cargo_deadline_minute": candidate.facts.get("cargo_deadline_minute"),
+                "deadline_source": candidate.facts.get("deadline_source"),
+                "load_window_buffer_minutes": candidate.facts.get("load_window_buffer_minutes"),
+                "finish_minute": candidate.facts.get("finish_minute"),
+            })
+        return samples
 
     def _evaluate_constraints(
         self,

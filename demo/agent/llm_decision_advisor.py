@@ -95,7 +95,7 @@ class LlmDecisionAdvisor:
             "- Prefer candidates with lower penalty_exposure when profits are similar.\n\n"
             "CONTINUOUS REST:\n"
             "- A rest candidate may be partial progress, not full satisfaction.\n"
-            "- completes_continuous_rest=false means this wait extends the streak but does not avoid the penalty yet.\n"
+            "- actually_satisfies_after_this_wait=false means this wait extends the streak but does not satisfy the full continuous-rest requirement yet.\n"
             "- Compare remaining rest need against cargo opportunity cost.\n\n"
             "OUTPUT FORMAT: Strict JSON:\n"
             '{\n'
@@ -131,11 +131,12 @@ class LlmDecisionAdvisor:
                 if c.facts.get("satisfies_constraint_type") == "continuous_rest":
                     desc["satisfies_constraint_type"] = "continuous_rest"
                     desc["satisfy_status"] = c.facts.get("satisfy_status")
-                    desc["completes_continuous_rest"] = bool(c.facts.get("completes_continuous_rest"))
                     desc["current_rest_streak_minutes"] = c.facts.get("current_rest_streak_minutes", 0)
+                    desc["max_rest_streak_today"] = c.facts.get("max_rest_streak_today", 0)
                     desc["required_rest_minutes"] = c.facts.get("required_minutes", 0)
-                    desc["remaining_rest_minutes"] = c.facts.get("remaining_rest_minutes", 0)
+                    desc["rest_streak_after_wait"] = c.facts.get("rest_streak_after_wait", 0)
                     desc["remaining_rest_minutes_after_wait"] = c.facts.get("remaining_rest_minutes_after_wait", 0)
+                    desc["actually_satisfies_after_this_wait"] = bool(c.facts.get("actually_satisfies_after_this_wait"))
                     desc["penalty_if_rest_not_completed"] = c.facts.get("penalty_if_rest_not_completed", 0)
                 if c.facts.get("avoids_estimated_penalty"):
                     desc["avoids_estimated_penalty"] = c.facts.get("avoids_estimated_penalty")
