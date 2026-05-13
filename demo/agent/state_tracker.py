@@ -110,11 +110,11 @@ class StateTracker:
         empty_query_streak = 0
 
         for record in records:
-            _, action_start, action_end, end_minute = _record_timing(record)
+            start_minute, action_start, action_end, end_minute = _record_timing(record)
             action_name = _action_name(record)
             result = record.get("result") if isinstance(record.get("result"), dict) else {}
             if action_name == "wait":
-                wait_intervals.append((action_start, action_end))
+                wait_intervals.append((start_minute, end_minute))
             elif action_name in {"take_order", "reposition"}:
                 active_intervals.append((action_start, action_end))
             if action_name == "reposition":

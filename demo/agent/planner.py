@@ -17,7 +17,6 @@ _DEADLINE_KEYS = (
     "load_deadline",
     "pickup_deadline",
     "latest_load_time",
-    "remove_time",
 )
 
 
@@ -154,6 +153,11 @@ class CandidateFactBuilder:
         )
 
     def _parse_cargo_deadline_minute(self, cargo: dict[str, Any]) -> tuple[int | None, str]:
+        load_time = cargo.get("load_time")
+        if isinstance(load_time, (list, tuple)) and len(load_time) == 2:
+            parsed = parse_wall_time_to_minute(load_time[1])
+            if parsed is not None:
+                return parsed, "load_time"
         for key in _DEADLINE_KEYS:
             value = cargo.get(key)
             if value is None or value == "":
@@ -219,6 +223,9 @@ class CandidateFactBuilder:
                     if candidate_id not in existing_ids:
                         existing_ids.add(candidate_id)
                         duration = min(60, max(1, remaining))
+                        remaining_after = max(0, remaining - duration)
+                        completes = remaining_after == 0
+                        penalty = max(c.penalty_amount, 100.0) * max(1, remaining / 60)
                         candidates.append(Candidate(
                             candidate_id=candidate_id,
                             action="wait",
@@ -226,12 +233,16 @@ class CandidateFactBuilder:
                             source="constraint_satisfy",
                             facts={
                                 "satisfies_constraint_type": "continuous_rest",
+                                "satisfy_status": "complete" if completes else "progress",
                                 "constraint_id": c.constraint_id,
                                 "current_rest_streak_minutes": current_streak,
                                 "required_minutes": c.required_minutes or 480,
                                 "remaining_rest_minutes": remaining,
-                                "remaining_rest_minutes_after_wait": max(0, remaining - duration),
-                                "avoids_estimated_penalty": max(c.penalty_amount, 100.0) * max(1, remaining / 60),
+                                "adds_rest_minutes": duration,
+                                "remaining_rest_minutes_after_wait": remaining_after,
+                                "completes_continuous_rest": completes,
+                                "avoids_estimated_penalty": penalty if completes else 0.0,
+                                "penalty_if_rest_not_completed": penalty,
                             },
                         ))
 

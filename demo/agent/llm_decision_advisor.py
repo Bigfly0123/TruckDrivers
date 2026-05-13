@@ -93,6 +93,10 @@ class LlmDecisionAdvisor:
             "- Compare order profit against penalty exposure and penalty avoidance.\n"
             "- Choose the candidate with the best expected net outcome, not simply the highest immediate freight income.\n"
             "- Prefer candidates with lower penalty_exposure when profits are similar.\n\n"
+            "CONTINUOUS REST:\n"
+            "- A rest candidate may be partial progress, not full satisfaction.\n"
+            "- completes_continuous_rest=false means this wait extends the streak but does not avoid the penalty yet.\n"
+            "- Compare remaining rest need against cargo opportunity cost.\n\n"
             "OUTPUT FORMAT: Strict JSON:\n"
             '{\n'
             '  "selected_candidate_id": "string",\n'
@@ -124,9 +128,15 @@ class LlmDecisionAdvisor:
                 desc["haul_distance_km"] = c.facts.get("haul_distance_km", 0)
             elif c.action == "wait":
                 desc["duration_minutes"] = c.params.get("duration_minutes", 0)
-                if c.facts.get("satisfies_continuous_rest"):
-                    desc["satisfies_continuous_rest"] = True
+                if c.facts.get("satisfies_constraint_type") == "continuous_rest":
+                    desc["satisfies_constraint_type"] = "continuous_rest"
+                    desc["satisfy_status"] = c.facts.get("satisfy_status")
+                    desc["completes_continuous_rest"] = bool(c.facts.get("completes_continuous_rest"))
+                    desc["current_rest_streak_minutes"] = c.facts.get("current_rest_streak_minutes", 0)
                     desc["required_rest_minutes"] = c.facts.get("required_minutes", 0)
+                    desc["remaining_rest_minutes"] = c.facts.get("remaining_rest_minutes", 0)
+                    desc["remaining_rest_minutes_after_wait"] = c.facts.get("remaining_rest_minutes_after_wait", 0)
+                    desc["penalty_if_rest_not_completed"] = c.facts.get("penalty_if_rest_not_completed", 0)
                 if c.facts.get("avoids_estimated_penalty"):
                     desc["avoids_estimated_penalty"] = c.facts.get("avoids_estimated_penalty")
                 if c.facts.get("remaining_rest_minutes") is not None:

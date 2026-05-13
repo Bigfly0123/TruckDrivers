@@ -155,12 +155,13 @@ class ConstraintEvaluator:
             remaining = rest_state.remaining_rest_minutes_by_constraint.get(constraint.constraint_id, remaining)
 
         if candidate.action == "wait":
-            new_streak = current_streak + candidate.params.get("duration_minutes", 0)
-            new_remaining = max(0, remaining - candidate.params.get("duration_minutes", 0))
+            wait_minutes = int(candidate.params.get("duration_minutes", 0) or 0)
+            new_streak = current_streak + wait_minutes
+            new_remaining = max(0, remaining - wait_minutes)
             return ConstraintImpact(
                 constraint_id=constraint.constraint_id,
                 constraint_type=constraint.constraint_type,
-                status="satisfies",
+                status="satisfies" if new_remaining == 0 else "progress",
                 penalty=0.0,
                 detail=f"rest_streak {current_streak} -> {new_streak}, remaining={new_remaining}",
             )

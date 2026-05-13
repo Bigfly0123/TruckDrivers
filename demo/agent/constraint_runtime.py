@@ -65,8 +65,8 @@ def compute_rest_runtime_state(
         action_name = str(action.get("action") or "").strip().lower()
 
         if action_name == "wait" and end_minute >= day_start:
-            wait_start = max(action_start, day_start)
-            wait_end = action_end
+            wait_start = max(start_minute, day_start)
+            wait_end = end_minute
             if last_wait_end is not None and wait_start <= last_wait_end + 1:
                 current_streak += wait_end - wait_start
             else:

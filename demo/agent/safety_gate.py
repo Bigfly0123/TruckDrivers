@@ -100,6 +100,14 @@ class SafetyGate:
         return True, ""
 
     def _parse_deadline(self, cargo: dict[str, Any]) -> int | None:
+        load_time = cargo.get("load_time")
+        if isinstance(load_time, (list, tuple)) and len(load_time) == 2:
+            try:
+                parsed = parse_wall_time_to_minute(load_time[1])
+            except Exception:
+                parsed = None
+            if parsed is not None:
+                return parsed
         for key in _DEADLINE_KEYS:
             value = cargo.get(key)
             if value is None or value == "":
