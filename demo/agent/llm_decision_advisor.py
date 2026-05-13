@@ -140,8 +140,6 @@ class LlmDecisionAdvisor:
                     desc["penalty_if_rest_not_completed"] = c.facts.get("penalty_if_rest_not_completed", 0)
                 if c.facts.get("avoids_estimated_penalty"):
                     desc["avoids_estimated_penalty"] = c.facts.get("avoids_estimated_penalty")
-                if c.facts.get("remaining_rest_minutes") is not None:
-                    desc["remaining_rest_minutes"] = c.facts.get("remaining_rest_minutes")
                 if c.facts.get("window_end_minute") is not None:
                     desc["window_end_minute"] = c.facts.get("window_end_minute")
             elif c.action == "reposition":
