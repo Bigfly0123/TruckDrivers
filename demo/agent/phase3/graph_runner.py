@@ -50,6 +50,7 @@ def build_default_graph(api: SimulationApiPort) -> GraphRunner:
     from agent.phase3.graph_nodes.constraint_node import ConstraintNode
     from agent.phase3.graph_nodes.emit_node import EmitNode
     from agent.phase3.graph_nodes.observe_node import ObserveNode
+    from agent.phase3.graph_nodes.opportunity_node import OpportunityNode
     from agent.phase3.graph_nodes.planning_node import PlanningNode
     from agent.phase3.graph_nodes.preference_node import PreferenceNode
     from agent.phase3.graph_nodes.reflection_node import MemoryUpdateNode, ReflectionNode
@@ -71,6 +72,7 @@ def build_default_graph(api: SimulationApiPort) -> GraphRunner:
             ConstraintNode(),
             PlanningNode(strategic_planner, day_plan_store),
             ReflectionNode(reflection_tool),
+            OpportunityNode(),
             AdvisorNode(api),
             SafetyNode(),
             EmitNode(),

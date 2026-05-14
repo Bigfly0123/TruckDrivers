@@ -34,6 +34,8 @@ class AdvisorTool:
             "has_day_plan": bool(day_plan_context),
             "reflection_hints": list((state.reflection_context or {}).get("hints") or []),
             "active_reflection_hint_count": int((state.reflection_context or {}).get("active_reflection_hint_count") or 0),
+            "opportunity_summary": state.debug.get("opportunity_summary", {}),
+            "opportunity_facts_count": len(state.opportunity_facts),
         }
         if not executable:
             action, reason = fallback_wait(state.decision_state, "no_candidates_available")
@@ -44,6 +46,11 @@ class AdvisorTool:
             return state
 
         candidate_summaries = self._constraint_adapter.build_candidate_summaries(state.evaluated_candidates)
+        opportunity_by_id = {
+            str(fact.get("candidate_id")): fact
+            for fact in state.opportunity_facts
+            if isinstance(fact, dict) and fact.get("candidate_id")
+        }
         result = self._legacy.advise(
             AdvisorContext(
                 state=state.decision_state,
@@ -56,6 +63,8 @@ class AdvisorTool:
                 candidate_summaries=candidate_summaries,
                 day_plan=day_plan_context,
                 reflection_hints=list((state.reflection_context or {}).get("hints") or []),
+                opportunity_summary=state.debug.get("opportunity_summary", {}),
+                candidate_opportunity_facts=opportunity_by_id,
             )
         )
         if result is None:
@@ -72,6 +81,10 @@ class AdvisorTool:
                     "selected_candidate_id": result.selected_candidate_id,
                     "reason": result.reason,
                     "accepted_risks": list(result.accepted_risks),
+                    "used_opportunity_signal": result.used_opportunity_signal,
+                    "opportunity_reason": result.opportunity_reason,
+                    "why_not_best_long_term_candidate": result.why_not_best_long_term_candidate,
+                    "wait_opportunity_cost_accepted_reason": result.wait_opportunity_cost_accepted_reason,
                 }
                 state.selected_candidate_id = result.selected_candidate_id
                 state.selected_candidate = selected
@@ -82,6 +95,8 @@ class AdvisorTool:
 
     def summarize_advisor_result(self, state: AgentState) -> dict[str, Any]:
         selected = state.selected_candidate
+        best_long_term = _safe_float_or_none((state.debug.get("opportunity_summary", {}) or {}).get("best_long_term_score_hint"))
+        selected_long_term = _fact_float(selected, "long_term_score_hint")
         return {
             "selected_candidate_id": state.selected_candidate_id,
             "selected_candidate_source": selected.source if selected else None,
@@ -90,6 +105,10 @@ class AdvisorTool:
             "selected_candidate_penalty_exposure": _fact_float(selected, "estimated_penalty_exposure"),
             "selected_candidate_estimated_net_after_penalty": _fact_float(selected, "estimated_net_after_penalty"),
             "advisor_reason": state.advisor_result.get("reason"),
+            "used_opportunity_signal": bool(state.advisor_result.get("used_opportunity_signal")),
+            "opportunity_reason": state.advisor_result.get("opportunity_reason"),
+            "why_not_best_long_term_candidate": state.advisor_result.get("why_not_best_long_term_candidate"),
+            "wait_opportunity_cost_accepted_reason": state.advisor_result.get("wait_opportunity_cost_accepted_reason"),
             "candidate_pool_size_sent_to_advisor": state.advisor_context.get("candidate_count", 0),
             "day_plan_primary_goal": (state.advisor_context.get("day_plan") or {}).get("primary_goal"),
             "day_plan_guidance_count": len((state.advisor_context.get("day_plan") or {}).get("advisor_guidance") or []),
@@ -98,6 +117,14 @@ class AdvisorTool:
             "active_reflection_hint_count": state.advisor_context.get("active_reflection_hint_count", 0),
             "reflection_hint_failure_types": _reflection_failure_types(state),
             "reflection_hint_priorities": _reflection_priorities(state),
+            "opportunity_facts_count": state.advisor_context.get("opportunity_facts_count", 0),
+            "selected_candidate_long_term_score_hint": selected_long_term,
+            "selected_candidate_wait_opportunity_cost": _fact_float(selected, "wait_opportunity_cost"),
+            "selected_candidate_destination_opportunity_score": _fact_float(selected, "destination_opportunity_score"),
+            "best_long_term_score_hint": best_long_term,
+            "best_long_term_candidate_id": (state.debug.get("opportunity_summary", {}) or {}).get("best_long_term_candidate_id"),
+            "selected_vs_best_long_term_gap": round(best_long_term - selected_long_term, 2)
+            if best_long_term is not None and selected_long_term is not None else None,
             "fallback_used": state.fallback_used,
             "fallback_reason": state.fallback_reason,
         }
@@ -156,6 +183,15 @@ def _fact_float(candidate: Candidate | None, key: str) -> float | None:
     if value is None and key == "estimated_net_after_penalty":
         value = candidate.facts.get("estimated_net")
     try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float_or_none(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
         return float(value)
     except (TypeError, ValueError):
         return None

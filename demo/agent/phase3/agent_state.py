@@ -44,6 +44,8 @@ class AgentState:
     day_plan_generated_this_step: bool = False
     reflection_hints: list[Any] = field(default_factory=list)
     reflection_context: dict[str, Any] = field(default_factory=dict)
+    opportunity_facts: list[dict[str, Any]] = field(default_factory=list)
+    opportunity_context: dict[str, Any] = field(default_factory=dict)
 
     advisor_context: dict[str, Any] = field(default_factory=dict)
     advisor_result: dict[str, Any] = field(default_factory=dict)

@@ -42,6 +42,8 @@ class AdvisorContext:
     candidate_summaries: dict[str, CandidateSummary] = field(default_factory=dict)
     day_plan: dict[str, Any] = field(default_factory=dict)
     reflection_hints: list[dict[str, Any]] = field(default_factory=list)
+    opportunity_summary: dict[str, Any] = field(default_factory=dict)
+    candidate_opportunity_facts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,10 @@ class AdvisorDecision:
     selected_candidate_id: str
     reason: str = ""
     accepted_risks: tuple[str, ...] = ()
+    used_opportunity_signal: bool = False
+    opportunity_reason: str = ""
+    why_not_best_long_term_candidate: str = ""
+    wait_opportunity_cost_accepted_reason: str = ""
 
 
 class LlmDecisionAdvisor:
@@ -110,6 +116,12 @@ class LlmDecisionAdvisor:
             "- They are advisory only and never override hard constraints, candidate facts, or SafetyGate.\n"
             "- Do not invent actions or candidate_ids from reflection_hints.\n"
             "- Use them to avoid repeating recent mistakes when trade-offs are otherwise close.\n\n"
+            "OPPORTUNITY / FUTURE VALUE:\n"
+            "- opportunity facts are evidence, not hard rules.\n"
+            "- long_term_score_hint combines immediate net, destination opportunity, wait cost, and future-risk evidence.\n"
+            "- If you select wait while wait_opportunity_cost is high, name the blocking constraint or critical goal.\n"
+            "- If you ignore a much higher long_term_score_hint candidate, explain why in the reason.\n"
+            "- target_cargo_visibility_status describes generic target-cargo watch state; do not invent target cargo actions.\n\n"
             "CONTINUOUS REST:\n"
             "- A rest candidate may be partial progress, not full satisfaction.\n"
             "- actually_satisfies_after_this_wait=false means this wait extends the streak but does not satisfy the full continuous-rest requirement yet.\n"
@@ -118,7 +130,11 @@ class LlmDecisionAdvisor:
             '{\n'
             '  "selected_candidate_id": "string",\n'
             '  "reason": "string",\n'
-            '  "accepted_risks": ["string"]\n'
+            '  "accepted_risks": ["string"],\n'
+            '  "used_opportunity_signal": true,\n'
+            '  "opportunity_reason": "string",\n'
+            '  "why_not_best_long_term_candidate": "string",\n'
+            '  "wait_opportunity_cost_accepted_reason": "string"\n'
             '}\n'
         )
 
@@ -137,6 +153,27 @@ class LlmDecisionAdvisor:
                 desc["satisfies_constraints"] = summary.satisfies_constraints
                 if summary.constraint_impacts:
                     desc["constraint_impacts"] = list(summary.constraint_impacts)
+            opportunity = context.candidate_opportunity_facts.get(c.candidate_id, {})
+            if opportunity:
+                for key in (
+                    "immediate_net",
+                    "destination_opportunity_score",
+                    "destination_visible_cargo_count",
+                    "destination_avg_nearby_order_net",
+                    "wait_opportunity_cost",
+                    "best_forgone_order_net",
+                    "profitable_order_count",
+                    "future_constraint_risk",
+                    "future_value_estimate",
+                    "long_term_score_hint",
+                    "target_cargo_visibility_status",
+                    "specific_cargo_wait_cost",
+                    "specific_cargo_blocked_by_current_action_risk",
+                    "cargo_watch_hint",
+                    "explanation",
+                ):
+                    if opportunity.get(key) is not None:
+                        desc[key] = opportunity.get(key)
             if c.action == "take_order":
                 desc["cargo_id"] = c.params.get("cargo_id", "")
                 desc["price"] = c.facts.get("price", 0)
@@ -204,6 +241,7 @@ class LlmDecisionAdvisor:
             "preferences": context.raw_preferences,
             "day_plan": context.day_plan,
             "reflection_hints": context.reflection_hints,
+            "opportunity_summary": context.opportunity_summary,
             "valid_candidates": valid_desc,
             "soft_risk_candidates": soft_desc,
             "recent_actions": context.recent_actions[-5:],
@@ -253,4 +291,8 @@ class LlmDecisionAdvisor:
             selected_candidate_id=candidate_id,
             reason=reason,
             accepted_risks=accepted_risks,
+            used_opportunity_signal=bool(data.get("used_opportunity_signal")),
+            opportunity_reason=str(data.get("opportunity_reason") or "").strip(),
+            why_not_best_long_term_candidate=str(data.get("why_not_best_long_term_candidate") or "").strip(),
+            wait_opportunity_cost_accepted_reason=str(data.get("wait_opportunity_cost_accepted_reason") or "").strip(),
         )

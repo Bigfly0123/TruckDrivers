@@ -14,6 +14,7 @@ class DiagnosticTool:
         safety = state.debug.get("safety_summary", {})
         goal_summary = state.debug.get("goal_summary", {})
         reflection_summary = state.debug.get("reflection_summary", {})
+        opportunity_summary = state.debug.get("opportunity_summary", {})
         selected_action = advisor.get("selected_candidate_action")
         selected_facts = state.selected_candidate.facts if state.selected_candidate is not None else {}
         final_action_name = (state.final_action or {}).get("action")
@@ -63,6 +64,19 @@ class DiagnosticTool:
             "rest_opportunity_cost": float(best_net or 0) if selected_is_rest and has_profitable else 0.0,
             "active_reflection_hint_count": reflection_summary.get("active_reflection_hint_count", 0),
             "reflection_failure_types": reflection_summary.get("reflection_failure_types", {}),
+            "wait_reason_category": _wait_reason_category(state, constraint, selected_facts, selected_is_wait),
+            "selected_candidate_wait_opportunity_cost": selected_facts.get("wait_opportunity_cost"),
+            "selected_candidate_long_term_score_hint": selected_facts.get("long_term_score_hint"),
+            "best_long_term_candidate_id": opportunity_summary.get("best_long_term_candidate_id"),
+            "best_long_term_score_hint": opportunity_summary.get("best_long_term_score_hint"),
+            "selected_vs_best_long_term_gap": advisor.get("selected_vs_best_long_term_gap"),
+            "advisor_ignored_best_long_term": _advisor_ignored_best_long_term(state, advisor, opportunity_summary),
+            "high_cost_wait_selected": bool(selected_is_wait and float(selected_facts.get("wait_opportunity_cost") or 0.0) > 300.0),
+            "target_cargo_unavailable_but_high_wait_cost": bool(
+                selected_is_wait
+                and selected_facts.get("target_cargo_visibility_status") in {"unavailable", "partially_visible"}
+                and float(selected_facts.get("wait_opportunity_cost") or 0.0) > 300.0
+            ),
         }
         state.diagnostics["decision_diagnosis"] = diagnosis
         state.debug["decision_diagnosis"] = diagnosis
@@ -90,6 +104,47 @@ def _why_wait_selected(state: AgentState, constraint: dict[str, Any], selected_i
     if int(constraint.get("valid_profitable_order_count") or 0) == 0:
         return "no_profitable_valid_order"
     return "advisor_tradeoff_or_prompt_behavior"
+
+
+def _wait_reason_category(
+    state: AgentState,
+    constraint: dict[str, Any],
+    selected_facts: dict[str, Any],
+    selected_is_wait: bool,
+) -> str | None:
+    if not selected_is_wait:
+        return None
+    if state.fallback_used:
+        return "fallback_wait"
+    if selected_facts.get("satisfies_constraint_type") == "forbid_action_in_time_window":
+        return "forbid_window_wait"
+    if selected_facts.get("satisfies_constraint_type") == "continuous_rest":
+        return "rest_required_wait"
+    if selected_facts.get("must_do_now") or selected_facts.get("urgency") == "critical":
+        return "critical_goal_wait"
+    if int(constraint.get("valid_order_count") or 0) == 0:
+        return "no_valid_order"
+    if int(constraint.get("valid_profitable_order_count") or 0) > 0:
+        return "profitable_order_but_wait"
+    if selected_facts.get("goal_id"):
+        return "dayplan_or_goal_wait"
+    return "unknown_wait"
+
+
+def _advisor_ignored_best_long_term(
+    state: AgentState,
+    advisor: dict[str, Any],
+    opportunity_summary: dict[str, Any],
+) -> bool:
+    best_id = str(opportunity_summary.get("best_long_term_candidate_id") or "")
+    selected_id = str(state.selected_candidate_id or "")
+    if not best_id or best_id == selected_id:
+        return False
+    try:
+        gap = float(advisor.get("selected_vs_best_long_term_gap") or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return gap > 300.0
 
 
 def _only_wait_candidates_available(state: AgentState) -> bool:

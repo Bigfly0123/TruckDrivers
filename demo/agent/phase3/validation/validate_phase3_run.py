@@ -48,9 +48,10 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     day_plan_stats = _day_plan_stats(graph_events, decisions)
     goal_stats = _goal_layer_stats(decisions)
     reflection_stats = _reflection_stats(decisions)
+    opportunity_stats = _opportunity_stats(decisions)
 
     lines = [
-        "# Phase 3.3 Validation Report",
+        "# Phase 3.4 Validation Report",
         "",
         "## Run Summary",
         f"- drivers: {len(drivers)}",
@@ -74,6 +75,9 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"- decisions_with_goal_candidates: {goal_stats['decisions_with_goal_candidates']}",
         f"- selected_goal_candidate_count: {goal_stats['selected_goal_candidate_count']}",
         f"- decisions_with_reflection_hints: {reflection_stats['decisions_with_reflection_hints']}",
+        f"- decisions_with_opportunity_facts: {opportunity_stats['decisions_with_opportunity_facts']}",
+        f"- high_cost_wait_selected_count: {opportunity_stats['high_cost_wait_selected_count']}",
+        f"- advisor_ignored_best_long_term_count: {opportunity_stats['advisor_ignored_best_long_term_count']}",
         "",
         "## Node Errors",
     ]
@@ -96,6 +100,31 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
             lines.append(f"| {driver} | {warning} | {count} |")
     else:
         lines.append("| all | none | 0 |")
+
+    lines.extend([
+        "",
+        "## Opportunity / Future Value",
+        "| metric | value |",
+        "|---|---:|",
+        f"| decisions_with_opportunity_facts | {opportunity_stats['decisions_with_opportunity_facts']} |",
+        f"| candidate_count_with_future_value_total | {opportunity_stats['candidate_count_with_future_value_total']} |",
+        f"| wait_opportunity_cost_sum | {opportunity_stats['wait_opportunity_cost_sum']} |",
+        f"| high_cost_wait_count_total | {opportunity_stats['high_cost_wait_count_total']} |",
+        f"| high_cost_wait_selected_count | {opportunity_stats['high_cost_wait_selected_count']} |",
+        f"| used_opportunity_signal_count | {opportunity_stats['used_opportunity_signal_count']} |",
+        f"| future_value_used_in_reason_count | {opportunity_stats['future_value_used_in_reason_count']} |",
+        f"| advisor_ignored_best_long_term_count | {opportunity_stats['advisor_ignored_best_long_term_count']} |",
+        f"| target_cargo_unavailable_but_high_wait_cost_count | {opportunity_stats['target_cargo_unavailable_but_high_wait_cost_count']} |",
+        "",
+        "### Wait Reason Categories",
+        "| category | count |",
+        "|---|---:|",
+    ])
+    if opportunity_stats["wait_reason_categories"]:
+        for category, count in opportunity_stats["wait_reason_categories"].most_common():
+            lines.append(f"| {category} | {count} |")
+    else:
+        lines.append("| none | 0 |")
 
     lines.extend([
         "",
@@ -203,7 +232,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     else:
         lines.append("| all | none | 0 |")
 
-    lines.extend(["", "## Phase 3.3 Acceptance"])
+    lines.extend(["", "## Phase 3.4 Acceptance"])
     checks = {
         "graph events present": bool(graph_events),
         "decision summaries present": bool(decisions),
@@ -219,6 +248,8 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         "day plan language is zh": day_plan_stats["language_mismatch_count"] == 0,
         "goal layer fields present": bool(decisions) and all("goal_candidate_count" in d for d in decisions),
         "reflection fields present": bool(decisions) and all("active_reflection_hint_count" in d for d in decisions),
+        "opportunity fields present": bool(decisions) and all("opportunity_facts_count" in d for d in decisions),
+        "future value fields present": bool(decisions) and all("candidate_count_with_future_value" in d for d in decisions),
     }
     for name, passed in checks.items():
         lines.append(f"- {name}: {'pass' if passed else 'fail'}")
@@ -456,6 +487,58 @@ def _reflection_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         "new_hint_count": new_hint_count,
         "filtered_illegal_fields": filtered_illegal_fields,
         "failure_types": failure_types,
+    }
+
+
+def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    wait_reason_categories: Counter[str] = Counter()
+    decisions_with_opportunity_facts = 0
+    candidate_count_with_future_value_total = 0
+    wait_opportunity_cost_sum = 0.0
+    high_cost_wait_count_total = 0
+    high_cost_wait_selected_count = 0
+    used_opportunity_signal_count = 0
+    future_value_used_in_reason_count = 0
+    advisor_ignored_best_long_term_count = 0
+    target_cargo_unavailable_but_high_wait_cost_count = 0
+    for decision in decisions:
+        if _safe_int(decision.get("opportunity_facts_count")) > 0:
+            decisions_with_opportunity_facts += 1
+        candidate_count_with_future_value_total += _safe_int(decision.get("candidate_count_with_future_value"))
+        try:
+            wait_opportunity_cost_sum += float(decision.get("wait_opportunity_cost_sum") or 0.0)
+        except (TypeError, ValueError):
+            pass
+        high_cost_wait_count_total += _safe_int(decision.get("high_cost_wait_count"))
+        if decision.get("used_opportunity_signal"):
+            used_opportunity_signal_count += 1
+        reason_text = " ".join(
+            str(decision.get(key) or "")
+            for key in ("advisor_reason", "opportunity_reason", "why_not_best_long_term_candidate")
+        ).lower()
+        if "opportunity" in reason_text or "future" in reason_text or "long_term" in reason_text:
+            future_value_used_in_reason_count += 1
+        diagnosis = decision.get("diagnosis") if isinstance(decision.get("diagnosis"), dict) else {}
+        category = diagnosis.get("wait_reason_category")
+        if category:
+            wait_reason_categories[str(category)] += 1
+        if diagnosis.get("high_cost_wait_selected"):
+            high_cost_wait_selected_count += 1
+        if diagnosis.get("advisor_ignored_best_long_term"):
+            advisor_ignored_best_long_term_count += 1
+        if diagnosis.get("target_cargo_unavailable_but_high_wait_cost"):
+            target_cargo_unavailable_but_high_wait_cost_count += 1
+    return {
+        "wait_reason_categories": wait_reason_categories,
+        "decisions_with_opportunity_facts": decisions_with_opportunity_facts,
+        "candidate_count_with_future_value_total": candidate_count_with_future_value_total,
+        "wait_opportunity_cost_sum": round(wait_opportunity_cost_sum, 2),
+        "high_cost_wait_count_total": high_cost_wait_count_total,
+        "high_cost_wait_selected_count": high_cost_wait_selected_count,
+        "used_opportunity_signal_count": used_opportunity_signal_count,
+        "future_value_used_in_reason_count": future_value_used_in_reason_count,
+        "advisor_ignored_best_long_term_count": advisor_ignored_best_long_term_count,
+        "target_cargo_unavailable_but_high_wait_cost_count": target_cargo_unavailable_but_high_wait_cost_count,
     }
 
 
