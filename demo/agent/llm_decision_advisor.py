@@ -89,7 +89,8 @@ class LlmDecisionAdvisor:
             "- estimated_net_after_penalty = profit minus potential penalty exposure.\n"
             "- penalty_exposure is the total potential cost from violating soft preferences.\n"
             "- satisfies_constraints=false means at least one preference is at risk.\n"
-            "- Candidates with source='constraint_satisfy' are generated to satisfy specific preferences.\n"
+            "- Candidates with source='goal_satisfy' are generated to advance a compiled preference goal.\n"
+            "- goal_satisfy candidates are deterministic executable actions, not final decisions.\n"
             "- Some wait/reposition candidates are NOT idle actions; they may satisfy constraints and avoid penalties.\n"
             "- Compare order profit against penalty exposure and penalty avoidance.\n"
             "- Choose the candidate with the best expected net outcome, not simply the highest immediate freight income.\n"
@@ -158,6 +159,16 @@ class LlmDecisionAdvisor:
                     desc["deadline_minute"] = c.facts.get("deadline_minute")
             if c.facts.get("satisfies_constraint_type"):
                 desc["satisfies_constraint_type"] = c.facts.get("satisfies_constraint_type")
+            if c.facts.get("goal_id"):
+                desc["goal_id"] = c.facts.get("goal_id")
+                desc["goal_type"] = c.facts.get("goal_type")
+                desc["step_index"] = c.facts.get("step_index")
+                desc["step_type"] = c.facts.get("step_type")
+                desc["advances_goal"] = bool(c.facts.get("advances_goal"))
+                desc["completion_condition"] = c.facts.get("completion_condition")
+                desc["materialization_reason"] = c.facts.get("materialization_reason")
+                desc["penalty_if_missed"] = c.facts.get("penalty_if_missed", 0)
+                desc["stuck_suspected"] = bool(c.facts.get("stuck_suspected"))
             return desc
 
         valid_desc = [_build_desc(c) for c in context.valid_candidates]

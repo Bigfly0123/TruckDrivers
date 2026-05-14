@@ -12,7 +12,9 @@ class DiagnosticTool:
         constraint = state.debug.get("constraint_summary", {})
         advisor = state.debug.get("advisor_summary", {})
         safety = state.debug.get("safety_summary", {})
+        goal_summary = state.debug.get("goal_summary", {})
         selected_action = advisor.get("selected_candidate_action")
+        selected_facts = state.selected_candidate.facts if state.selected_candidate is not None else {}
         final_action_name = (state.final_action or {}).get("action")
         selected_is_wait = selected_action == "wait" or final_action_name == "wait"
         has_profitable = int(constraint.get("valid_profitable_order_count") or 0) > 0
@@ -41,6 +43,13 @@ class DiagnosticTool:
             "safety_rejected_advisor_choice": bool(safety.get("safety_rejected") and state.fallback_used),
             "candidate_pool_empty": len(state.evaluated_candidates or state.raw_candidates) == 0,
             "only_wait_candidates_available": _only_wait_candidates_available(state),
+            "active_goal_count": goal_summary.get("active_goal_count", 0),
+            "goal_candidate_count": goal_summary.get("goal_candidate_count", 0),
+            "goal_materialization_failures": goal_summary.get("goal_materialization_failures", {}),
+            "stuck_goal_count": goal_summary.get("stuck_goal_count", 0),
+            "selected_candidate_advances_goal": bool(selected_facts.get("advances_goal")),
+            "selected_candidate_goal_id": selected_facts.get("goal_id"),
+            "selected_candidate_goal_type": selected_facts.get("goal_type"),
         }
         state.diagnostics["decision_diagnosis"] = diagnosis
         state.debug["decision_diagnosis"] = diagnosis

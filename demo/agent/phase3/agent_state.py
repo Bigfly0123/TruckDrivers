@@ -29,10 +29,16 @@ class AgentState:
     constraint_runtime_state: ConstraintRuntimeState | None = None
 
     raw_candidates: list[Candidate] = field(default_factory=list)
+    base_candidates: list[Candidate] = field(default_factory=list)
+    legacy_satisfy_candidates: list[Candidate] = field(default_factory=list)
+    goal_candidates: list[Candidate] = field(default_factory=list)
     evaluated_candidates: list[Candidate] = field(default_factory=list)
     valid_candidates: list[Candidate] = field(default_factory=list)
     soft_risk_candidates: list[Candidate] = field(default_factory=list)
     hard_invalid_candidates: list[Candidate] = field(default_factory=list)
+    active_goals: list[Any] = field(default_factory=list)
+    goal_progress: dict[str, Any] = field(default_factory=dict)
+    goal_diagnostics: dict[str, Any] = field(default_factory=dict)
 
     day_plan: DayPlan | None = None
     day_plan_generated_this_step: bool = False

@@ -1,22 +1,22 @@
 {
   "month": "2026-03",
-  "simulate_time_seconds": 6921.75,
+  "simulate_time_seconds": 7186.52,
   "result_files_count": 10,
   "drivers": [
     {
       "driver_id": "D001",
       "income": {
-        "gross_income": 13822.11,
-        "distance_km": 1941.85,
-        "cost": 2912.78,
+        "gross_income": 12444.95,
+        "distance_km": 1893.38,
+        "cost": 2840.07,
         "preference_penalty": 3000.0,
-        "net_income": 7909.34
+        "net_income": 6604.88
       },
       "token_usage": {
-        "prompt_tokens": 919674,
-        "completion_tokens": 38677,
+        "prompt_tokens": 1045903,
+        "completion_tokens": 42096,
         "reasoning_tokens": 0,
-        "total_tokens": 958351
+        "total_tokens": 1087999
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -24,7 +24,7 @@
         "rules": [
           {
             "rule": "每日连续熄火休息≥8小时",
-            "violations": 20,
+            "violations": 12,
             "penalty": 3000.0,
             "preference_text": "我这人熬不住连轴转，每天至少连续停车熄火休息满8小时。"
           },
@@ -46,17 +46,17 @@
     {
       "driver_id": "D002",
       "income": {
-        "gross_income": 41221.05,
-        "distance_km": 9926.65,
-        "cost": 14889.97,
-        "preference_penalty": 5400.0,
-        "net_income": 20931.08
+        "gross_income": 36877.38,
+        "distance_km": 9405.81,
+        "cost": 14108.72,
+        "preference_penalty": 4600.0,
+        "net_income": 18168.66
       },
       "token_usage": {
-        "prompt_tokens": 805590,
-        "completion_tokens": 24208,
+        "prompt_tokens": 894177,
+        "completion_tokens": 23947,
         "reasoning_tokens": 0,
-        "total_tokens": 829798
+        "total_tokens": 918124
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -64,7 +64,7 @@
         "rules": [
           {
             "rule": "自然月至少4整天无成交接单（空驶不计）",
-            "free_days": 9,
+            "free_days": 8,
             "penalty": 0.0,
             "preference_text": "自然月内至少要有4个整天不接单。"
           },
@@ -76,8 +76,8 @@
           },
           {
             "rule": "每日连续停车歇脚≥4小时",
-            "violations": 27,
-            "penalty": 5400.0,
+            "violations": 23,
+            "penalty": 4600.0,
             "preference_text": "每天至少有一段连着停车歇满4小时（真熄火歇脚）。"
           }
         ]
@@ -86,17 +86,17 @@
     {
       "driver_id": "D003",
       "income": {
-        "gross_income": 24512.22,
-        "distance_km": 3411.93,
-        "cost": 5117.9,
-        "preference_penalty": 7400.0,
-        "net_income": 11994.32
+        "gross_income": 25948.9,
+        "distance_km": 3722.22,
+        "cost": 5583.33,
+        "preference_penalty": 7000.0,
+        "net_income": 13365.57
       },
       "token_usage": {
-        "prompt_tokens": 336733,
-        "completion_tokens": 30196,
+        "prompt_tokens": 358817,
+        "completion_tokens": 29639,
         "reasoning_tokens": 0,
-        "total_tokens": 366929
+        "total_tokens": 388456
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -104,8 +104,8 @@
         "rules": [
           {
             "rule": "月度空驶赶路≤100km（超额按公里计）",
-            "deadhead_km": 759.29,
-            "over_km": 659.29,
+            "deadhead_km": 794.39,
+            "over_km": 694.39,
             "penalty": 2000.0,
             "preference_text": "一个月空驶赶路里程总和不得超过100公里；仅对超出部分按公里计罚。"
           },
@@ -117,8 +117,8 @@
           },
           {
             "rule": "凌晨2–5点不接单不空驶",
-            "violations": 27,
-            "penalty": 5400.0,
+            "violations": 25,
+            "penalty": 5000.0,
             "preference_text": "每天凌晨2点至5点不接单、不空车赶路（从发车赶路或去接单时刻计）。"
           }
         ]
@@ -127,17 +127,17 @@
     {
       "driver_id": "D004",
       "income": {
-        "gross_income": 34192.94,
-        "distance_km": 8226.16,
-        "cost": 12339.24,
-        "preference_penalty": 3300.0,
-        "net_income": 18553.7
+        "gross_income": 34458.16,
+        "distance_km": 8209.17,
+        "cost": 12313.76,
+        "preference_penalty": 3500.0,
+        "net_income": 18644.4
       },
       "token_usage": {
-        "prompt_tokens": 754500,
-        "completion_tokens": 26801,
+        "prompt_tokens": 803444,
+        "completion_tokens": 30874,
         "reasoning_tokens": 0,
-        "total_tokens": 781301
+        "total_tokens": 834318
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -156,8 +156,8 @@
           },
           {
             "rule": "12–13点不接单不空驶",
-            "violations": 19,
-            "penalty": 1900.0,
+            "violations": 21,
+            "penalty": 2100.0,
             "preference_text": "每天中午12点至下午1点吃饭歇脚，不接单、不空车赶路。"
           }
         ]
@@ -166,17 +166,17 @@
     {
       "driver_id": "D005",
       "income": {
-        "gross_income": 23065.73,
-        "distance_km": 3089.58,
-        "cost": 4634.37,
-        "preference_penalty": 3400.0,
-        "net_income": 15031.36
+        "gross_income": 20733.34,
+        "distance_km": 3026.51,
+        "cost": 4539.76,
+        "preference_penalty": 3800.0,
+        "net_income": 12393.57
       },
       "token_usage": {
-        "prompt_tokens": 706759,
-        "completion_tokens": 37474,
+        "prompt_tokens": 510511,
+        "completion_tokens": 33150,
         "reasoning_tokens": 0,
-        "total_tokens": 744233
+        "total_tokens": 543661
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -196,8 +196,8 @@
           },
           {
             "rule": "每日23–次日6不接单不空驶",
-            "violations": 17,
-            "penalty": 3400.0,
+            "violations": 19,
+            "penalty": 3800.0,
             "preference_text": "每晚23点至次日早6点不接单、不空车赶路。"
           }
         ]
@@ -206,17 +206,17 @@
     {
       "driver_id": "D006",
       "income": {
-        "gross_income": 24665.34,
-        "distance_km": 3944.22,
-        "cost": 5916.33,
-        "preference_penalty": 7000.0,
-        "net_income": 11749.01
+        "gross_income": 21208.31,
+        "distance_km": 3884.25,
+        "cost": 5826.37,
+        "preference_penalty": 6200.0,
+        "net_income": 9181.94
       },
       "token_usage": {
-        "prompt_tokens": 873657,
-        "completion_tokens": 30548,
+        "prompt_tokens": 1088226,
+        "completion_tokens": 33158,
         "reasoning_tokens": 0,
-        "total_tokens": 904205
+        "total_tokens": 1121384
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -224,8 +224,8 @@
         "rules": [
           {
             "rule": "每日连续停车休息≥5小时",
-            "violations": 20,
-            "penalty": 4000.0,
+            "violations": 16,
+            "penalty": 3200.0,
             "preference_text": "每天至少有一段连着停车休息满5小时（真停车歇着；送货与空跑不算休息）。"
           },
           {
@@ -252,17 +252,17 @@
     {
       "driver_id": "D007",
       "income": {
-        "gross_income": 27494.01,
-        "distance_km": 4831.6,
-        "cost": 7247.4,
-        "preference_penalty": 5000.0,
-        "net_income": 15246.61
+        "gross_income": 27458.03,
+        "distance_km": 4681.68,
+        "cost": 7022.52,
+        "preference_penalty": 5500.0,
+        "net_income": 14935.51
       },
       "token_usage": {
-        "prompt_tokens": 751099,
-        "completion_tokens": 39747,
+        "prompt_tokens": 914597,
+        "completion_tokens": 41156,
         "reasoning_tokens": 0,
-        "total_tokens": 790846
+        "total_tokens": 955753
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -270,8 +270,8 @@
         "rules": [
           {
             "rule": "每日23–次日4不接单不空驶",
-            "violations": 10,
-            "penalty": 5000.0,
+            "violations": 11,
+            "penalty": 5500.0,
             "preference_text": "每天23点至次日4点不接单、不空车赶路；路边停车等人不算违规。"
           },
           {
@@ -298,17 +298,17 @@
     {
       "driver_id": "D008",
       "income": {
-        "gross_income": 16492.95,
-        "distance_km": 2003.91,
-        "cost": 3005.87,
+        "gross_income": 14448.19,
+        "distance_km": 1820.63,
+        "cost": 2730.94,
         "preference_penalty": 3900.0,
-        "net_income": 9587.08
+        "net_income": 7817.24
       },
       "token_usage": {
-        "prompt_tokens": 669711,
-        "completion_tokens": 34201,
+        "prompt_tokens": 577507,
+        "completion_tokens": 31736,
         "reasoning_tokens": 0,
-        "total_tokens": 703912
+        "total_tokens": 609243
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -344,17 +344,17 @@
     {
       "driver_id": "D009",
       "income": {
-        "gross_income": 26280.21,
-        "distance_km": 8831.49,
-        "cost": 13247.24,
-        "preference_penalty": 36100.0,
-        "net_income": -23067.03
+        "gross_income": 30015.51,
+        "distance_km": 10830.29,
+        "cost": 16245.44,
+        "preference_penalty": 32500.0,
+        "net_income": -18729.92
       },
       "token_usage": {
-        "prompt_tokens": 1018452,
-        "completion_tokens": 40285,
+        "prompt_tokens": 841929,
+        "completion_tokens": 39297,
         "reasoning_tokens": 0,
-        "total_tokens": 1058737
+        "total_tokens": 881226
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -368,8 +368,8 @@
           },
           {
             "rule": "每日23点前到家且夜间不接单不空驶",
-            "violations": 29,
-            "penalty": 26100.0,
+            "violations": 25,
+            "penalty": 22500.0,
             "preference_text": "每天23点前车辆须在自家位置（23.12，113.28）一公里内；当天23点至次日8点不接单、不空跑。"
           },
           {
@@ -384,17 +384,17 @@
     {
       "driver_id": "D010",
       "income": {
-        "gross_income": 36613.57,
-        "distance_km": 8431.63,
-        "cost": 12647.45,
-        "preference_penalty": 36600.0,
-        "net_income": -12633.87
+        "gross_income": 35852.46,
+        "distance_km": 9299.92,
+        "cost": 13949.88,
+        "preference_penalty": 35650.0,
+        "net_income": -13747.42
       },
       "token_usage": {
-        "prompt_tokens": 1469357,
-        "completion_tokens": 38154,
+        "prompt_tokens": 1532899,
+        "completion_tokens": 40282,
         "reasoning_tokens": 0,
-        "total_tokens": 1507511
+        "total_tokens": 1573181
       },
       "calculation_aborted": false,
       "validation_error": null,
@@ -402,21 +402,21 @@
         "rules": [
           {
             "rule": "家事临时约定(3/10–3/13)",
-            "sequence_ok": false,
+            "sequence_ok": true,
             "home_window": [
               13560,
               17880
             ],
-            "minutes_not_home_in_window": 4320,
-            "pickup_done_minute": 15942,
-            "first_home_minute": null,
-            "penalty_absence_minutes": 21600.0,
-            "triggers_spouse_incomplete": true,
-            "never_arrived_home": true,
-            "left_after_arrival": false,
+            "minutes_not_home_in_window": 4130,
+            "pickup_done_minute": 14798,
+            "first_home_minute": 14811,
+            "penalty_absence_minutes": 20650.0,
+            "triggers_spouse_incomplete": false,
+            "never_arrived_home": false,
+            "left_after_arrival": true,
             "triggers_early_leave": true,
             "penalty_fixed_9000": 9000.0,
-            "penalty": 30600.0,
+            "penalty": 29650.0,
             "preference_text": "【临时约定·家事】2026年3月10日10:00，家中急事：须先到（23.21，113.37）接上配偶（原地停留不少于10分钟），再返回老家（23.19，113.36）；须在2026年3月10日22:00前进家门，到家后须在原处静止，至少待到2026年3月13日22:00事情解决方可再出车。解决前（2026年3月10日22:00至2026年3月13日22:00）每迟到或不在家1分钟罚5元、上不封顶。未接到配偶即抵达老家、完全未抵达家中或提前离家，满足任一项额外一次性罚9000元。"
           },
           {
@@ -427,7 +427,7 @@
           },
           {
             "rule": "每日连续停车休息≥3小时",
-            "violations": 25,
+            "violations": 20,
             "penalty": 6000.0,
             "preference_text": "每天连续停车休息至少3小时。"
           },
@@ -442,13 +442,13 @@
     }
   ],
   "summary": {
-    "total_net_income_all_drivers": 75301.6,
-    "total_preference_penalty": 111100.0,
+    "total_net_income_all_drivers": 68634.43,
+    "total_preference_penalty": 105650.0,
     "total_token_usage": {
-      "prompt_tokens": 8305532,
-      "completion_tokens": 340291,
+      "prompt_tokens": 8568010,
+      "completion_tokens": 345335,
       "reasoning_tokens": 0,
-      "total_tokens": 8645823
+      "total_tokens": 8913345
     },
     "failed_driver_count": 0,
     "failed_drivers": {}

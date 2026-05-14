@@ -46,9 +46,10 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     ]
 
     day_plan_stats = _day_plan_stats(graph_events, decisions)
+    goal_stats = _goal_layer_stats(decisions)
 
     lines = [
-        "# Phase 3.1 Validation Report",
+        "# Phase 3.2 Validation Report",
         "",
         "## Run Summary",
         f"- drivers: {len(drivers)}",
@@ -69,6 +70,8 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"- planner_fallback_plan_count: {day_plan_stats['fallback_plan_count']}",
         f"- day_plan_guidance_present_rate: {day_plan_stats['guidance_present_rate']}",
         f"- day_plan_risk_focus_present_rate: {day_plan_stats['risk_focus_present_rate']}",
+        f"- decisions_with_goal_candidates: {goal_stats['decisions_with_goal_candidates']}",
+        f"- selected_goal_candidate_count: {goal_stats['selected_goal_candidate_count']}",
         "",
         "## Node Errors",
     ]
@@ -91,6 +94,29 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
             lines.append(f"| {driver} | {warning} | {count} |")
     else:
         lines.append("| all | none | 0 |")
+
+    lines.extend([
+        "",
+        "## Goal Candidate Layer",
+        "| metric | value |",
+        "|---|---:|",
+        f"| decisions_with_active_goals | {goal_stats['decisions_with_active_goals']} |",
+        f"| decisions_with_goal_candidates | {goal_stats['decisions_with_goal_candidates']} |",
+        f"| selected_goal_candidate_count | {goal_stats['selected_goal_candidate_count']} |",
+        f"| avg_active_goal_count | {goal_stats['avg_active_goal_count']} |",
+        f"| avg_goal_candidate_count | {goal_stats['avg_goal_candidate_count']} |",
+        f"| goal_materialization_failure_decisions | {goal_stats['failure_decisions']} |",
+        f"| stuck_goal_decisions | {goal_stats['stuck_goal_decisions']} |",
+        "",
+        "### Goal Materialization Failures",
+        "| reason | count |",
+        "|---|---:|",
+    ])
+    if goal_stats["failure_counts"]:
+        for reason, count in goal_stats["failure_counts"].most_common():
+            lines.append(f"| {reason} | {count} |")
+    else:
+        lines.append("| none | 0 |")
 
     lines.extend([
         "",
@@ -135,7 +161,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     else:
         lines.append("| all | none | 0 |")
 
-    lines.extend(["", "## Phase 3.1 Acceptance"])
+    lines.extend(["", "## Phase 3.2 Acceptance"])
     checks = {
         "graph events present": bool(graph_events),
         "decision summaries present": bool(decisions),
@@ -149,11 +175,12 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         "day plan guidance present rate >= 0.95": day_plan_stats["guidance_present_rate_value"] >= 0.95,
         "day plan risk focus present rate >= 0.90": day_plan_stats["risk_focus_present_rate_value"] >= 0.90,
         "day plan language is zh": day_plan_stats["language_mismatch_count"] == 0,
+        "goal layer fields present": bool(decisions) and all("goal_candidate_count" in d for d in decisions),
     }
     for name, passed in checks.items():
         lines.append(f"- {name}: {'pass' if passed else 'fail'}")
     ready = all(checks.values())
-    lines.append(f"- ready for Phase 3.2: {'yes' if ready else 'no'}")
+    lines.append(f"- ready for next phase: {'yes' if ready else 'no'}")
     lines.append("")
     return "\n".join(lines)
 
@@ -286,6 +313,48 @@ def _day_plan_stats(graph_events: list[dict[str, Any]], decisions: list[dict[str
     }
 
 
+def _goal_layer_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    active_counts: list[int] = []
+    candidate_counts: list[int] = []
+    failure_counts: Counter[str] = Counter()
+    selected_goal_candidate_count = 0
+    stuck_goal_decisions = 0
+    failure_decisions = 0
+    decisions_with_active_goals = 0
+    decisions_with_goal_candidates = 0
+
+    for decision in decisions:
+        active = _safe_int(decision.get("active_goal_count"))
+        goal_candidates = _safe_int(decision.get("goal_candidate_count"))
+        active_counts.append(active)
+        candidate_counts.append(goal_candidates)
+        if active > 0:
+            decisions_with_active_goals += 1
+        if goal_candidates > 0:
+            decisions_with_goal_candidates += 1
+        if decision.get("selected_candidate_goal_id"):
+            selected_goal_candidate_count += 1
+        stuck = _safe_int(decision.get("goal_stuck_suspected_count"))
+        if stuck > 0:
+            stuck_goal_decisions += 1
+        failures = decision.get("goal_materialization_failures")
+        if isinstance(failures, dict) and failures:
+            failure_decisions += 1
+            for reason, count in failures.items():
+                failure_counts[str(reason)] += _safe_int(count)
+
+    return {
+        "decisions_with_active_goals": decisions_with_active_goals,
+        "decisions_with_goal_candidates": decisions_with_goal_candidates,
+        "selected_goal_candidate_count": selected_goal_candidate_count,
+        "avg_active_goal_count": round(mean(active_counts), 2) if active_counts else "n/a",
+        "avg_goal_candidate_count": round(mean(candidate_counts), 2) if candidate_counts else "n/a",
+        "failure_counts": failure_counts,
+        "failure_decisions": failure_decisions,
+        "stuck_goal_decisions": stuck_goal_decisions,
+    }
+
+
 def _count_field(decision: dict[str, Any], count_key: str, list_key: str) -> int:
     value = decision.get(count_key)
     try:
@@ -297,6 +366,13 @@ def _count_field(decision: dict[str, Any], count_key: str, list_key: str) -> int
     if isinstance(list_value, list):
         return len(list_value)
     return 0
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 if __name__ == "__main__":
