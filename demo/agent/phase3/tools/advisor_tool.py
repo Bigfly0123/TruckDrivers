@@ -8,6 +8,7 @@ from agent.phase3.adapters.legacy_advisor_adapter import LegacyAdvisorAdapter, p
 from agent.phase3.adapters.legacy_constraint_adapter import LegacyConstraintAdapter
 from agent.phase3.adapters.legacy_safety_adapter import fallback_wait
 from agent.phase3.agent_state import AgentState
+from agent.phase3.planning.day_plan import DayPlan
 from simkit.ports import SimulationApiPort
 
 
@@ -26,7 +27,7 @@ class AdvisorTool:
         if state.decision_state is None:
             raise ValueError("advisor tool requires decision_state")
         executable = state.valid_candidates + state.soft_risk_candidates
-        day_plan_context = state.day_plan.to_advisor_context() if state.day_plan is not None else {}
+        day_plan_context = _day_plan_context(state)
         state.advisor_context = {
             "candidate_count": len(executable),
             "day_plan": day_plan_context,
@@ -89,6 +90,8 @@ class AdvisorTool:
             "candidate_pool_size_sent_to_advisor": state.advisor_context.get("candidate_count", 0),
             "day_plan_primary_goal": (state.advisor_context.get("day_plan") or {}).get("primary_goal"),
             "day_plan_guidance_count": len((state.advisor_context.get("day_plan") or {}).get("advisor_guidance") or []),
+            "day_plan_risk_focus_count": len((state.advisor_context.get("day_plan") or {}).get("risk_focus") or []),
+            "day_plan_language": (state.advisor_context.get("day_plan") or {}).get("language"),
             "fallback_used": state.fallback_used,
             "fallback_reason": state.fallback_reason,
         }
@@ -113,6 +116,31 @@ def _find_candidate(candidates: list[Candidate], candidate_id: str) -> Candidate
         if candidate.candidate_id == candidate_id:
             return candidate
     return None
+
+
+def _day_plan_context(state: AgentState) -> dict[str, Any]:
+    if state.day_plan is not None:
+        return state.day_plan.normalize(_normalization_context(state)).to_advisor_context()
+    plan = DayPlan(
+        driver_id=state.driver_id,
+        day=int(state.current_day or 0),
+        strategy_summary="",
+        primary_goal="",
+        fallback_used=True,
+        reason="planning_node_missing_day_plan",
+    ).normalize(_normalization_context(state))
+    return plan.to_advisor_context()
+
+
+def _normalization_context(state: AgentState) -> dict[str, Any]:
+    constraint_summary = state.debug.get("constraint_summary", {})
+    return {
+        "constraint_types": sorted({getattr(c, "kind", "") for c in state.constraints if getattr(c, "kind", "")}),
+        "dominant_hard_invalid_reason": constraint_summary.get("dominant_hard_invalid_reason"),
+        "hard_invalid_reason_counts": constraint_summary.get("hard_invalid_reason_counts"),
+        "runtime_summary": state.debug.get("runtime_summary", {}),
+        "diagnostic_summary": state.debug.get("decision_diagnosis", {}),
+    }
 
 
 def _fact_float(candidate: Candidate | None, key: str) -> float | None:

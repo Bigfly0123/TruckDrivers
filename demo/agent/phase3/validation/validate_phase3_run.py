@@ -67,6 +67,8 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"- decisions_with_day_plan: {day_plan_stats['decisions_with_day_plan']}",
         f"- decisions_missing_day_plan: {day_plan_stats['decisions_missing_day_plan']}",
         f"- planner_fallback_plan_count: {day_plan_stats['fallback_plan_count']}",
+        f"- day_plan_guidance_present_rate: {day_plan_stats['guidance_present_rate']}",
+        f"- day_plan_risk_focus_present_rate: {day_plan_stats['risk_focus_present_rate']}",
         "",
         "## Node Errors",
     ]
@@ -89,6 +91,34 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
             lines.append(f"| {driver} | {warning} | {count} |")
     else:
         lines.append("| all | none | 0 |")
+
+    lines.extend([
+        "",
+        "## DayPlan Quality",
+        "| metric | value |",
+        "|---|---:|",
+        f"| decisions_with_day_plan | {day_plan_stats['decisions_with_day_plan']} |",
+        f"| day_plan_empty_guidance_count | {day_plan_stats['empty_guidance_count']} |",
+        f"| day_plan_guidance_present_rate | {day_plan_stats['guidance_present_rate']} |",
+        f"| day_plan_empty_risk_focus_count | {day_plan_stats['empty_risk_focus_count']} |",
+        f"| day_plan_risk_focus_present_rate | {day_plan_stats['risk_focus_present_rate']} |",
+        f"| day_plan_fallback_count | {day_plan_stats['fallback_plan_count']} |",
+        f"| day_plan_language_mismatch_count | {day_plan_stats['language_mismatch_count']} |",
+        f"| decisions_with_day_plan_guidance | {day_plan_stats['decisions_with_guidance']} |",
+        f"| decisions_missing_day_plan_guidance | {day_plan_stats['empty_guidance_count']} |",
+    ])
+
+    lines.extend(["", "## Advisor Wait Despite Profit", "| driver | count |", "|---|---:|"])
+    wait_profit_counts = {
+        driver: count
+        for (driver, warning), count in warning_counts.items()
+        if warning == "profitable_valid_order_but_selected_wait"
+    }
+    if wait_profit_counts:
+        for driver, count in sorted(wait_profit_counts.items()):
+            lines.append(f"| {driver} | {count} |")
+    else:
+        lines.append("| all | 0 |")
 
     lines.extend(["", "## DayPlan Summary", "| driver | created | reused | missing | fallback_plan |", "|---|---:|---:|---:|---:|"])
     for driver in drivers:
@@ -116,6 +146,9 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         "planning node executed": event_counts.get("planning_summary", 0) > 0,
         "day plan present in decisions": bool(decisions) and day_plan_stats["decisions_missing_day_plan"] == 0,
         "day plan events present": day_plan_stats["created_count"] > 0 or day_plan_stats["reused_count"] > 0,
+        "day plan guidance present rate >= 0.95": day_plan_stats["guidance_present_rate_value"] >= 0.95,
+        "day plan risk focus present rate >= 0.90": day_plan_stats["risk_focus_present_rate_value"] >= 0.90,
+        "day plan language is zh": day_plan_stats["language_mismatch_count"] == 0,
     }
     for name, passed in checks.items():
         lines.append(f"- {name}: {'pass' if passed else 'fail'}")
@@ -191,6 +224,11 @@ def _day_plan_stats(graph_events: list[dict[str, Any]], decisions: list[dict[str
     reused_by_driver: Counter[str] = Counter()
     fallback_by_driver: Counter[str] = Counter()
     missing_by_driver: Counter[str] = Counter()
+    empty_guidance_count = 0
+    empty_risk_focus_count = 0
+    fallback_decision_count = 0
+    language_mismatch_count = 0
+    decisions_with_guidance = 0
     for event in graph_events:
         event_name = event.get("event")
         driver = str(event.get("driver_id") or "unknown")
@@ -208,17 +246,57 @@ def _day_plan_stats(graph_events: list[dict[str, Any]], decisions: list[dict[str
             decisions_with_day_plan += 1
         else:
             missing_by_driver[driver] += 1
+        guidance_count = _count_field(decision, "day_plan_guidance_count", "day_plan_advisor_guidance")
+        risk_focus_count = _count_field(decision, "day_plan_risk_focus_count", "day_plan_risk_focus")
+        if guidance_count > 0:
+            decisions_with_guidance += 1
+        else:
+            empty_guidance_count += 1
+        if risk_focus_count <= 0:
+            empty_risk_focus_count += 1
+        if decision.get("day_plan_fallback_used"):
+            fallback_decision_count += 1
+        language = decision.get("day_plan_language")
+        if language is not None and language != "zh":
+            language_mismatch_count += 1
+        if language is None and decision.get("day_plan_summary"):
+            language_mismatch_count += 1
+    total_decisions = len(decisions)
+    guidance_rate = (decisions_with_guidance / total_decisions) if total_decisions else 0.0
+    risk_rate = ((total_decisions - empty_risk_focus_count) / total_decisions) if total_decisions else 0.0
+    fallback_event_count = sum(fallback_by_driver.values())
     return {
         "created_count": sum(created_by_driver.values()),
         "reused_count": sum(reused_by_driver.values()),
         "decisions_with_day_plan": decisions_with_day_plan,
         "decisions_missing_day_plan": sum(missing_by_driver.values()),
-        "fallback_plan_count": sum(fallback_by_driver.values()),
+        "fallback_plan_count": fallback_event_count if fallback_event_count else fallback_decision_count,
+        "empty_guidance_count": empty_guidance_count,
+        "empty_risk_focus_count": empty_risk_focus_count,
+        "guidance_present_rate_value": guidance_rate,
+        "risk_focus_present_rate_value": risk_rate,
+        "guidance_present_rate": f"{guidance_rate:.2%}",
+        "risk_focus_present_rate": f"{risk_rate:.2%}",
+        "language_mismatch_count": language_mismatch_count,
+        "decisions_with_guidance": decisions_with_guidance,
         "created_by_driver": created_by_driver,
         "reused_by_driver": reused_by_driver,
         "missing_by_driver": missing_by_driver,
         "fallback_by_driver": fallback_by_driver,
     }
+
+
+def _count_field(decision: dict[str, Any], count_key: str, list_key: str) -> int:
+    value = decision.get(count_key)
+    try:
+        if value is not None:
+            return int(value)
+    except (TypeError, ValueError):
+        pass
+    list_value = decision.get(list_key)
+    if isinstance(list_value, list):
+        return len(list_value)
+    return 0
 
 
 if __name__ == "__main__":
