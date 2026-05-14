@@ -69,8 +69,9 @@ class GoalBuilder:
             stay_minutes = int(getattr(raw_step, "stay_minutes", 0) or 0)
             deadline_minute = getattr(raw_step, "deadline_minute", None)
             step_type = _ordered_step_type(action, point, stay_minutes, deadline_minute)
+            step_id = f"{goal_id}_step_{len(steps)}"
             steps.append(GoalStep(
-                step_id=f"{goal_id}_step_{index}",
+                step_id=step_id,
                 step_type=step_type,
                 point=point,
                 earliest_minute=getattr(raw_step, "earliest_minute", None),
@@ -79,6 +80,16 @@ class GoalBuilder:
                 label=str(getattr(raw_step, "label", "") or ""),
                 metadata={"source_action": action, "source_index": index},
             ))
+            if _needs_followup_hold(index, raw_steps, point, stay_minutes, deadline_minute):
+                steps.append(GoalStep(
+                    step_id=f"{goal_id}_step_{len(steps)}",
+                    step_type="hold_location_until_time",
+                    point=point,
+                    earliest_minute=getattr(raw_step, "earliest_minute", None),
+                    deadline_minute=deadline_minute,
+                    label=str(getattr(raw_step, "label", "") or ""),
+                    metadata={"source_action": action, "source_index": index, "generated_hold": True},
+                ))
         return Goal(
             goal_id=goal_id,
             goal_type="ordered_steps",
@@ -101,12 +112,7 @@ class GoalBuilder:
             priority=str(getattr(constraint, "priority", "medium") or "medium"),
             penalty_amount=float(getattr(constraint, "penalty_amount", 0.0) or 0.0),
             raw_text=str(getattr(constraint, "raw_text", "") or ""),
-            steps=(GoalStep(
-                step_id=f"{goal_id}_reach",
-                step_type="reach_location",
-                point=point,
-                deadline_minute=getattr(constraint, "deadline_minute", None),
-            ),),
+            steps=_location_steps(goal_id, constraint, point),
         )
 
     def _rest_goal(self, constraint: Any) -> Goal | None:
@@ -151,6 +157,42 @@ def _ordered_step_type(action: str, point: Any, stay_minutes: int, deadline_minu
     if action in {"take_specific_cargo"}:
         return "take_specific_cargo"
     return "reach_location"
+
+
+def _needs_followup_hold(index: int, raw_steps: Any, point: Any, stay_minutes: int, deadline_minute: Any) -> bool:
+    if point is None or deadline_minute is None:
+        return False
+    if stay_minutes > 0:
+        return False
+    return index == len(raw_steps) - 1
+
+
+def _location_steps(goal_id: str, constraint: Any, point: Any) -> tuple[GoalStep, ...]:
+    deadline = getattr(constraint, "deadline_minute", None)
+    metadata = getattr(constraint, "metadata", {}) or {}
+    original_kind = metadata.get("original_kind") if isinstance(metadata, dict) else None
+    if original_kind == "home_nightly" and deadline is not None:
+        return (
+            GoalStep(
+                step_id=f"{goal_id}_reach",
+                step_type="reach_location",
+                point=point,
+                deadline_minute=deadline,
+            ),
+            GoalStep(
+                step_id=f"{goal_id}_hold",
+                step_type="hold_location_until_time",
+                point=point,
+                deadline_minute=deadline,
+                metadata={"generated_hold": True, "original_kind": original_kind},
+            ),
+        )
+    return (GoalStep(
+        step_id=f"{goal_id}_reach",
+        step_type="reach_location",
+        point=point,
+        deadline_minute=deadline,
+    ),)
 
 
 def _goal_id(constraint: Any, goal_type: str, suffix: str | None = None) -> str:

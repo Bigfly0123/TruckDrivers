@@ -50,6 +50,46 @@ def trailing_wait_minutes_at_point(state: DecisionState, point: GeoPoint | None)
     return total
 
 
+def first_visit_minute_at_point(state: DecisionState, point: GeoPoint | None, after_minute: int = 0) -> int | None:
+    if point is None:
+        return None
+    for minute, lat, lng in state.visited_positions:
+        if int(minute) < int(after_minute):
+            continue
+        if haversine_km(lat, lng, point.latitude, point.longitude) <= max(0.1, point.radius_km):
+            return int(minute)
+    return None
+
+
+def accumulated_wait_at_point_after(
+    state: DecisionState,
+    point: GeoPoint | None,
+    after_minute: int = 0,
+    required_minutes: int = 0,
+) -> tuple[int, int | None]:
+    if point is None:
+        return 0, None
+    total = 0
+    for record in state.history_records:
+        action = _action(record)
+        if action.get("action") != "wait":
+            continue
+        _start_minute, action_start, action_end, end_minute = _record_timing(record)
+        if action_end <= after_minute:
+            continue
+        pos = _position_after(record)
+        if pos is None:
+            continue
+        if haversine_km(pos[0], pos[1], point.latitude, point.longitude) > max(0.1, point.radius_km):
+            continue
+        add = max(0, action_end - max(action_start, after_minute))
+        total += add
+        if required_minutes > 0 and total >= required_minutes:
+            overshoot = total - required_minutes
+            return total, max(after_minute, end_minute - overshoot)
+    return total, None
+
+
 def repeated_recent_step_actions(
     state: DecisionState,
     *,
@@ -92,6 +132,20 @@ def _record_action_minutes(record: dict[str, Any]) -> int:
     scan = int(record.get("query_scan_cost_minutes") or 0)
     action_cost = int(record.get("action_exec_cost_minutes") or max(0, elapsed - scan))
     return max(0, action_cost)
+
+
+def _record_timing(record: dict[str, Any]) -> tuple[int, int, int, int]:
+    result = record.get("result") if isinstance(record.get("result"), dict) else {}
+    end_minute = int(result.get("simulation_progress_minutes") or 0)
+    elapsed = int(record.get("step_elapsed_minutes") or 0)
+    scan = int(record.get("query_scan_cost_minutes") or 0)
+    action_cost = int(record.get("action_exec_cost_minutes") or max(0, elapsed - scan))
+    start_minute = max(0, end_minute - elapsed)
+    action_start = start_minute + scan
+    action_end = action_start + action_cost
+    if action_end <= action_start:
+        action_end = end_minute
+    return start_minute, action_start, action_end, end_minute
 
 
 def _safe_float(value: Any) -> float:

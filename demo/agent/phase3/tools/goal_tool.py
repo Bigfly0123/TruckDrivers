@@ -38,7 +38,7 @@ class GoalTool:
             goals=goals,
             progress_by_goal=progress_by_goal,
             materializer_diagnostics=materializer_diagnostics,
-            goal_candidate_count=len(goal_candidates),
+            goal_candidates=goal_candidates,
         )
         state.active_goals = goals
         state.goal_progress = progress_by_goal

@@ -13,11 +13,13 @@ class DiagnosticTool:
         advisor = state.debug.get("advisor_summary", {})
         safety = state.debug.get("safety_summary", {})
         goal_summary = state.debug.get("goal_summary", {})
+        reflection_summary = state.debug.get("reflection_summary", {})
         selected_action = advisor.get("selected_candidate_action")
         selected_facts = state.selected_candidate.facts if state.selected_candidate is not None else {}
         final_action_name = (state.final_action or {}).get("action")
         selected_is_wait = selected_action == "wait" or final_action_name == "wait"
         has_profitable = int(constraint.get("valid_profitable_order_count") or 0) > 0
+        selected_is_rest = selected_facts.get("goal_type") == "continuous_rest" and selected_is_wait
         best_net = constraint.get("best_valid_order_net")
         selected_net = advisor.get("selected_candidate_estimated_net")
         gap = None
@@ -47,9 +49,20 @@ class DiagnosticTool:
             "goal_candidate_count": goal_summary.get("goal_candidate_count", 0),
             "goal_materialization_failures": goal_summary.get("goal_materialization_failures", {}),
             "stuck_goal_count": goal_summary.get("stuck_goal_count", 0),
+            "goal_candidate_urgency_counts": goal_summary.get("goal_candidate_urgency_counts", {}),
+            "goal_candidate_must_do_now_count": goal_summary.get("goal_candidate_must_do_now_count", 0),
+            "hold_candidate_generated_count": goal_summary.get("hold_candidate_generated_count", 0),
+            "rest_not_urgent_count": goal_summary.get("rest_not_urgent_count", 0),
+            "ordered_steps_regression_count": goal_summary.get("ordered_steps_regression_count", 0),
             "selected_candidate_advances_goal": bool(selected_facts.get("advances_goal")),
             "selected_candidate_goal_id": selected_facts.get("goal_id"),
             "selected_candidate_goal_type": selected_facts.get("goal_type"),
+            "selected_candidate_goal_urgency": selected_facts.get("urgency"),
+            "selected_candidate_must_do_now": selected_facts.get("must_do_now"),
+            "profitable_valid_order_but_selected_rest": bool(selected_is_rest and has_profitable and not state.fallback_used),
+            "rest_opportunity_cost": float(best_net or 0) if selected_is_rest and has_profitable else 0.0,
+            "active_reflection_hint_count": reflection_summary.get("active_reflection_hint_count", 0),
+            "reflection_failure_types": reflection_summary.get("reflection_failure_types", {}),
         }
         state.diagnostics["decision_diagnosis"] = diagnosis
         state.debug["decision_diagnosis"] = diagnosis

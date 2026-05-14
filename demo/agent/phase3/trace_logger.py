@@ -37,6 +37,8 @@ class TraceLogger:
             if event in {"day_plan_created", "day_plan_reused"}:
                 self._write_graph_event(state, event, "planning_node", planning_summary)
             self._write_graph_event(state, "planning_summary", "planning_node", planning_summary)
+        if node_name in {"reflection_node", "memory_update_node"}:
+            self._write_graph_event(state, "reflection_summary", node_name, state.debug.get("reflection_summary", {}))
 
     def node_error(self, state: AgentState, node_name: str, exc: Exception) -> None:
         self._write_graph_event(
@@ -105,6 +107,8 @@ def _tool_name_for_node(node_name: str) -> str | None:
         "candidate_node": "candidate_tool",
         "constraint_node": "constraint_tool",
         "planning_node": "strategic_planner_agent",
+        "reflection_node": "reflection_tool",
+        "memory_update_node": "reflection_tool",
         "advisor_node": "advisor_tool",
         "safety_node": "safety_tool",
         "emit_node": "diagnostic_tool",

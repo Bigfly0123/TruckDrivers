@@ -34,12 +34,16 @@ class Goal:
 @dataclass(frozen=True)
 class GoalProgress:
     goal_id: str
+    completed_step_ids: tuple[str, ...] = ()
     completed_step_count: int = 0
     current_step_index: int | None = None
     is_complete: bool = False
     current_step_progress_minutes: int = 0
+    current_step_started_at: int | None = None
+    step_completed_at: dict[str, int] = field(default_factory=dict)
     repeated_step_action_count: int = 0
     stuck_suspected: bool = False
+    regression_suspected: bool = False
     diagnostics: tuple[dict[str, Any], ...] = ()
 
     @property

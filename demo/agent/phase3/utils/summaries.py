@@ -53,6 +53,11 @@ def candidate_summary(state: AgentState) -> dict[str, Any]:
         "active_goal_types": goal_summary.get("active_goal_types", {}),
         "goal_materialization_failures": goal_summary.get("goal_materialization_failures", {}),
         "stuck_goal_count": goal_summary.get("stuck_goal_count", 0),
+        "goal_candidate_urgency_counts": goal_summary.get("goal_candidate_urgency_counts", {}),
+        "goal_candidate_must_do_now_count": goal_summary.get("goal_candidate_must_do_now_count", 0),
+        "hold_candidate_generated_count": goal_summary.get("hold_candidate_generated_count", 0),
+        "rest_not_urgent_count": goal_summary.get("rest_not_urgent_count", 0),
+        "ordered_steps_regression_count": goal_summary.get("ordered_steps_regression_count", 0),
     }
 
 
@@ -76,6 +81,7 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
     day_plan = state.day_plan.to_advisor_context() if state.day_plan is not None else {}
     selected_facts = state.selected_candidate.facts if state.selected_candidate is not None else {}
     goal_summary = state.debug.get("goal_summary", {})
+    reflection_summary = state.debug.get("reflection_summary", {})
     return {
         "driver_id": state.driver_id,
         "step_id": state.step_id,
@@ -101,12 +107,26 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "top_hard_invalid_reasons": hard_reason_counts,
         "sample_hard_invalid_candidates": sample_hard_invalid_candidates(state.hard_invalid_candidates),
         "advisor_candidate_count": state.advisor_context.get("candidate_count", 0),
+        "active_reflection_hint_count": state.advisor_context.get("active_reflection_hint_count", 0),
+        "reflection_hints_used": state.advisor_context.get("active_reflection_hint_count", 0),
+        "reflection_active_hint_count_after_update": reflection_summary.get("active_reflection_hint_count", 0),
+        "reflection_hint_priorities": reflection_summary.get("reflection_hint_priorities", {}),
+        "reflection_failure_types": reflection_summary.get("reflection_failure_types", {}),
+        "reflection_new_failure_count": reflection_summary.get("new_failure_count", 0),
+        "reflection_new_hint_count": reflection_summary.get("new_hint_count", 0),
+        "reflection_new_failure_types": reflection_summary.get("new_failure_types", {}),
+        "reflection_filtered_illegal_fields": reflection_summary.get("reflection_filtered_illegal_fields", 0),
         "active_goal_count": goal_summary.get("active_goal_count", len(state.active_goals)),
         "active_goal_types": goal_summary.get("active_goal_types", {}),
         "goal_candidate_count": goal_summary.get("goal_candidate_count", len(state.goal_candidates)),
         "goal_materialization_failures": goal_summary.get("goal_materialization_failures", {}),
         "goal_stuck_suspected_count": goal_summary.get("stuck_goal_count", 0),
         "goal_stuck_samples": goal_summary.get("stuck_goals", []),
+        "goal_candidate_urgency_counts": goal_summary.get("goal_candidate_urgency_counts", {}),
+        "goal_candidate_must_do_now_count": goal_summary.get("goal_candidate_must_do_now_count", 0),
+        "hold_candidate_generated_count": goal_summary.get("hold_candidate_generated_count", 0),
+        "rest_not_urgent_count": goal_summary.get("rest_not_urgent_count", 0),
+        "ordered_steps_regression_count": goal_summary.get("ordered_steps_regression_count", 0),
         "day_plan_summary": day_plan.get("strategy_summary"),
         "day_plan_primary_goal": day_plan.get("primary_goal"),
         "day_plan_risk_focus": day_plan.get("risk_focus"),
@@ -125,6 +145,10 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "selected_candidate_goal_step_type": selected_facts.get("step_type"),
         "selected_candidate_advances_goal": selected_facts.get("advances_goal"),
         "selected_candidate_goal_materialization_reason": selected_facts.get("materialization_reason"),
+        "selected_candidate_goal_urgency": selected_facts.get("urgency"),
+        "selected_candidate_must_do_now": selected_facts.get("must_do_now"),
+        "selected_candidate_penalty_at_risk": selected_facts.get("penalty_at_risk"),
+        "selected_candidate_opportunity_cost_hint": selected_facts.get("opportunity_cost_hint"),
         "selected_action": selected_action,
         "selected_candidate_action": advisor.get("selected_candidate_action") or selected_action,
         "selected_candidate_estimated_net": advisor.get("selected_candidate_estimated_net"),

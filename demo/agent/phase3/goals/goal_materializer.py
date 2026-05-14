@@ -25,6 +25,7 @@ class GoalMaterializer:
         candidates: list[Candidate] = []
         diagnostics: list[dict[str, Any]] = []
         cargo_candidates = _cargo_candidates_by_id(base_candidates)
+        best_visible_order_net = _best_visible_order_net(base_candidates)
         existing_ids: set[str] = set()
 
         for goal in goals:
@@ -42,6 +43,7 @@ class GoalMaterializer:
                 state=state,
                 runtime=runtime,
                 cargo_candidates=cargo_candidates,
+                best_visible_order_net=best_visible_order_net,
             )
             diagnostics.extend(emitted)
             for candidate in built:
@@ -62,8 +64,17 @@ class GoalMaterializer:
         state: DecisionState,
         runtime: Any | None,
         cargo_candidates: dict[str, Candidate],
+        best_visible_order_net: float,
     ) -> tuple[list[Candidate], list[dict[str, Any]]]:
-        facts = self._goal_facts(goal, step, step_index, progress)
+        facts = self._goal_facts(
+            goal,
+            step,
+            step_index,
+            progress,
+            state=state,
+            runtime=runtime,
+            best_visible_order_net=best_visible_order_net,
+        )
         diagnostics: list[dict[str, Any]] = []
 
         if step.step_type == "take_specific_cargo":
@@ -124,7 +135,7 @@ class GoalMaterializer:
             )
             return [candidate], [self._diagnostic(goal, step_index, "info", "materialized", candidate_id=candidate.candidate_id)]
 
-        if step.step_type in {"wait_duration", "stay_until_time"}:
+        if step.step_type in {"wait_duration", "stay_until_time", "hold_location_until_time"}:
             if step.step_type == "stay_until_time" and step.point is not None and not is_at_point(state, step.point):
                 candidate = reposition_candidate(
                     candidate_id=f"goal_{goal.goal_id}_step_{step_index}_reach_before_wait_until",
@@ -137,11 +148,33 @@ class GoalMaterializer:
                     },
                 )
                 return [candidate], [self._diagnostic(goal, step_index, "info", "materialized", candidate_id=candidate.candidate_id)]
+            if step.step_type == "hold_location_until_time" and not _hold_is_actionable(step, state):
+                return [], [self._diagnostic(
+                    goal,
+                    step_index,
+                    "info",
+                    "hold_not_urgent",
+                    earliest_minute=step.earliest_minute,
+                    deadline_minute=step.deadline_minute,
+                )]
+            if step.step_type == "hold_location_until_time" and step.point is not None and not is_at_point(state, step.point):
+                candidate = reposition_candidate(
+                    candidate_id=f"goal_{goal.goal_id}_step_{step_index}_reach_before_hold",
+                    point=step.point,
+                    facts={
+                        **facts,
+                        "deadline_minute": step.deadline_minute,
+                        "penalty_if_missed": _penalty(goal),
+                        "materialization_reason": "cannot_hold_not_at_target_reach_first",
+                    },
+                )
+                return [candidate], [self._diagnostic(goal, step_index, "info", "materialized", candidate_id=candidate.candidate_id)]
             remaining = 60
-            if step.step_type == "stay_until_time" and step.deadline_minute is not None:
+            if step.step_type in {"stay_until_time", "hold_location_until_time"} and step.deadline_minute is not None:
                 remaining = max(1, int(step.deadline_minute) - state.current_minute)
             elif step.required_minutes:
                 remaining = max(1, step.required_minutes - progress.current_step_progress_minutes)
+            reason = "hold_location_until_deadline" if step.step_type == "hold_location_until_time" else "continue_wait_step"
             candidate = wait_candidate(
                 candidate_id=f"goal_{goal.goal_id}_step_{step_index}_wait_{min(60, remaining)}",
                 duration_minutes=min(60, remaining),
@@ -152,7 +185,7 @@ class GoalMaterializer:
                     "remaining_minutes_after_wait": max(0, remaining - min(60, remaining)),
                     "actually_satisfies_after_this_wait": remaining <= 60,
                     "penalty_if_missed": _penalty(goal),
-                    "materialization_reason": "continue_wait_step",
+                    "materialization_reason": reason,
                 },
             )
             return [candidate], [self._diagnostic(goal, step_index, "info", "materialized", candidate_id=candidate.candidate_id)]
@@ -162,6 +195,21 @@ class GoalMaterializer:
             current_streak = int(getattr(rest, "current_rest_streak_minutes", 0) or 0)
             max_streak = int(getattr(rest, "max_rest_streak_today", 0) or 0)
             required = max(1, int(step.required_minutes or 480))
+            remaining_now = max(0, required - max(current_streak, max_streak))
+            latest_safe_start = _latest_safe_rest_start(state, required, current_streak)
+            must_do_now = state.current_minute >= latest_safe_start
+            penalty = _penalty(goal)
+            should_continue = current_streak > 0 and (remaining_now <= 60 or best_visible_order_net <= penalty)
+            if not must_do_now and not should_continue:
+                return [], [self._diagnostic(
+                    goal,
+                    step_index,
+                    "info",
+                    "rest_not_urgent",
+                    latest_safe_start_time=latest_safe_start,
+                    best_visible_order_net=best_visible_order_net,
+                    remaining_required_rest=remaining_now,
+                )]
             duration = min(60, max(1, required - current_streak))
             streak_after = current_streak + duration
             max_after = max(max_streak, streak_after)
@@ -182,8 +230,13 @@ class GoalMaterializer:
                     "rest_streak_after_wait": streak_after,
                     "remaining_rest_minutes_after_wait": remaining_after,
                     "actually_satisfies_after_this_wait": completes,
-                    "avoids_estimated_penalty": _penalty(goal) if completes else 0.0,
-                    "penalty_if_rest_not_completed": _penalty(goal),
+                    "avoids_estimated_penalty": penalty if completes else 0.0,
+                    "penalty_if_rest_not_completed": penalty,
+                    "latest_safe_start_time": latest_safe_start,
+                    "must_do_now": must_do_now,
+                    "urgency": _rest_urgency(state, latest_safe_start, remaining_now, completes),
+                    "penalty_at_risk": penalty,
+                    "opportunity_cost_hint": best_visible_order_net,
                     "materialization_reason": "continue_continuous_rest_streak",
                 },
             )
@@ -211,7 +264,18 @@ class GoalMaterializer:
 
         return [], [self._diagnostic(goal, step_index, "warning", "unsupported_step_type", step_type=step.step_type)]
 
-    def _goal_facts(self, goal: Goal, step: GoalStep, step_index: int, progress: GoalProgress) -> dict[str, Any]:
+    def _goal_facts(
+        self,
+        goal: Goal,
+        step: GoalStep,
+        step_index: int,
+        progress: GoalProgress,
+        *,
+        state: DecisionState,
+        runtime: Any | None,
+        best_visible_order_net: float,
+    ) -> dict[str, Any]:
+        urgency, must_do_now, latest_safe_start = _goal_urgency(goal, step, state, runtime)
         return {
             "goal_id": goal.goal_id,
             "goal_type": goal.goal_type,
@@ -224,8 +288,15 @@ class GoalMaterializer:
             "completed_step_count": progress.completed_step_count,
             "total_step_count": len(goal.steps),
             "stuck_suspected": progress.stuck_suspected,
+            "regression_suspected": progress.regression_suspected,
             "repeated_step_action_count": progress.repeated_step_action_count,
             "penalty_if_missed": _penalty(goal),
+            "priority": goal.priority,
+            "urgency": urgency,
+            "must_do_now": must_do_now,
+            "latest_safe_start_time": latest_safe_start,
+            "penalty_at_risk": _penalty(goal),
+            "opportunity_cost_hint": best_visible_order_net,
         }
 
     def _diagnostic(self, goal: Goal, step_index: int, level: str, reason: str, **extra: Any) -> dict[str, Any]:
@@ -251,6 +322,18 @@ def _cargo_candidates_by_id(candidates: list[Candidate]) -> dict[str, Candidate]
     return result
 
 
+def _best_visible_order_net(candidates: list[Candidate]) -> float:
+    values: list[float] = []
+    for candidate in candidates:
+        if candidate.action != "take_order":
+            continue
+        try:
+            values.append(float(candidate.facts.get("estimated_net", 0) or 0))
+        except (TypeError, ValueError):
+            continue
+    return max(values) if values else 0.0
+
+
 def _completion_condition(step: GoalStep) -> str:
     if step.step_type == "take_specific_cargo":
         return "accepted_target_cargo"
@@ -260,6 +343,8 @@ def _completion_condition(step: GoalStep) -> str:
         return "continuous_wait_or_stay_minutes_reached"
     if step.step_type == "stay_until_time":
         return "time_reached_while_at_required_location"
+    if step.step_type == "hold_location_until_time":
+        return "remain_at_required_location_until_time"
     if step.step_type == "complete_rest":
         return "max_continuous_rest_streak_reaches_required_minutes"
     if step.step_type == "wait_until_window_end":
@@ -269,3 +354,60 @@ def _completion_condition(step: GoalStep) -> str:
 
 def _penalty(goal: Goal) -> float:
     return max(float(goal.penalty_amount or 0.0), 100.0)
+
+
+def _goal_urgency(goal: Goal, step: GoalStep, state: DecisionState, runtime: Any | None) -> tuple[str, bool, int | None]:
+    penalty = _penalty(goal)
+    if step.step_type == "complete_rest":
+        required = max(1, int(step.required_minutes or 480))
+        rest = getattr(runtime, "rest", None) if runtime is not None else None
+        current_streak = int(getattr(rest, "current_rest_streak_minutes", 0) or 0)
+        latest = _latest_safe_rest_start(state, required, current_streak)
+        return _rest_urgency(state, latest, max(0, required - current_streak), False), state.current_minute >= latest, latest
+    if step.step_type == "wait_until_window_end":
+        return "critical", True, state.current_minute
+    if step.deadline_minute is not None:
+        remaining = int(step.deadline_minute) - state.current_minute
+        if step.step_type == "hold_location_until_time" and _hold_is_active(step, state):
+            return "critical", True, int(step.deadline_minute)
+        if remaining <= 0:
+            return "critical", True, int(step.deadline_minute)
+        if remaining <= 60:
+            return "critical", True, int(step.deadline_minute)
+        if remaining <= 180 or penalty >= 1000:
+            return "high", remaining <= 180, int(step.deadline_minute)
+        return "medium", False, int(step.deadline_minute)
+    if goal.goal_type in {"specific_cargo", "ordered_steps"} and penalty >= 1000:
+        return "high", False, None
+    return "medium", False, None
+
+
+def _latest_safe_rest_start(state: DecisionState, required: int, current_streak: int) -> int:
+    day_end = (state.current_day + 1) * 1440
+    remaining = max(0, int(required) - int(current_streak))
+    return day_end - remaining
+
+
+def _hold_is_actionable(step: GoalStep, state: DecisionState) -> bool:
+    if step.deadline_minute is None:
+        return False
+    remaining = int(step.deadline_minute) - state.current_minute
+    if remaining <= 0:
+        return True
+    if _hold_is_active(step, state):
+        return True
+    return remaining <= 180
+
+
+def _hold_is_active(step: GoalStep, state: DecisionState) -> bool:
+    if step.earliest_minute is None or step.deadline_minute is None:
+        return False
+    return int(step.earliest_minute) <= state.current_minute < int(step.deadline_minute)
+
+
+def _rest_urgency(state: DecisionState, latest_safe_start: int, remaining_now: int, completes: bool) -> str:
+    if state.current_minute >= latest_safe_start:
+        return "critical" if remaining_now > 60 and not completes else "high"
+    if latest_safe_start - state.current_minute <= 120:
+        return "medium"
+    return "low"

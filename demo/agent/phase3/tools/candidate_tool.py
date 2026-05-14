@@ -37,6 +37,11 @@ class CandidateTool:
             "active_goal_types": goal_summary.get("active_goal_types", {}),
             "goal_materialization_failures": goal_summary.get("goal_materialization_failures", {}),
             "stuck_goal_count": goal_summary.get("stuck_goal_count", 0),
+            "goal_candidate_urgency_counts": goal_summary.get("goal_candidate_urgency_counts", {}),
+            "goal_candidate_must_do_now_count": goal_summary.get("goal_candidate_must_do_now_count", 0),
+            "hold_candidate_generated_count": goal_summary.get("hold_candidate_generated_count", 0),
+            "rest_not_urgent_count": goal_summary.get("rest_not_urgent_count", 0),
+            "ordered_steps_regression_count": goal_summary.get("ordered_steps_regression_count", 0),
         })
         state.tool_summaries["candidate_tool"] = summary
         state.debug["candidate_summary"] = summary

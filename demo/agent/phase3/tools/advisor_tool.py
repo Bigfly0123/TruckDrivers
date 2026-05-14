@@ -32,6 +32,8 @@ class AdvisorTool:
             "candidate_count": len(executable),
             "day_plan": day_plan_context,
             "has_day_plan": bool(day_plan_context),
+            "reflection_hints": list((state.reflection_context or {}).get("hints") or []),
+            "active_reflection_hint_count": int((state.reflection_context or {}).get("active_reflection_hint_count") or 0),
         }
         if not executable:
             action, reason = fallback_wait(state.decision_state, "no_candidates_available")
@@ -53,6 +55,7 @@ class AdvisorTool:
                 trigger_reason="normal_candidate_decision",
                 candidate_summaries=candidate_summaries,
                 day_plan=day_plan_context,
+                reflection_hints=list((state.reflection_context or {}).get("hints") or []),
             )
         )
         if result is None:
@@ -92,6 +95,9 @@ class AdvisorTool:
             "day_plan_guidance_count": len((state.advisor_context.get("day_plan") or {}).get("advisor_guidance") or []),
             "day_plan_risk_focus_count": len((state.advisor_context.get("day_plan") or {}).get("risk_focus") or []),
             "day_plan_language": (state.advisor_context.get("day_plan") or {}).get("language"),
+            "active_reflection_hint_count": state.advisor_context.get("active_reflection_hint_count", 0),
+            "reflection_hint_failure_types": _reflection_failure_types(state),
+            "reflection_hint_priorities": _reflection_priorities(state),
             "fallback_used": state.fallback_used,
             "fallback_reason": state.fallback_reason,
         }
@@ -153,3 +159,25 @@ def _fact_float(candidate: Candidate | None, key: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _reflection_failure_types(state: AgentState) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for hint in (state.reflection_context or {}).get("hints") or []:
+        if not isinstance(hint, dict):
+            continue
+        failure_type = str(hint.get("failure_type") or "")
+        if failure_type:
+            counts[failure_type] = counts.get(failure_type, 0) + 1
+    return counts
+
+
+def _reflection_priorities(state: AgentState) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for hint in (state.reflection_context or {}).get("hints") or []:
+        if not isinstance(hint, dict):
+            continue
+        priority = str(hint.get("priority") or "")
+        if priority:
+            counts[priority] = counts.get(priority, 0) + 1
+    return counts

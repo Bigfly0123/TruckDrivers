@@ -41,6 +41,7 @@ class AdvisorContext:
     trigger_reason: str = "normal_candidate_decision"
     candidate_summaries: dict[str, CandidateSummary] = field(default_factory=dict)
     day_plan: dict[str, Any] = field(default_factory=dict)
+    reflection_hints: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,9 @@ class LlmDecisionAdvisor:
             "- satisfies_constraints=false means at least one preference is at risk.\n"
             "- Candidates with source='goal_satisfy' are generated to advance a compiled preference goal.\n"
             "- goal_satisfy candidates are deterministic executable actions, not final decisions.\n"
+            "- A goal_satisfy candidate with must_do_now=false is optional progress; do not choose it over a clearly profitable order unless the trade-off is justified.\n"
+            "- For rest goals, compare opportunity_cost_hint and best order profit against penalty_at_risk.\n"
+            "- Prefer high/critical urgency goal candidates; low/medium urgency candidates can wait.\n"
             "- Some wait/reposition candidates are NOT idle actions; they may satisfy constraints and avoid penalties.\n"
             "- Compare order profit against penalty exposure and penalty avoidance.\n"
             "- Choose the candidate with the best expected net outcome, not simply the highest immediate freight income.\n"
@@ -101,6 +105,11 @@ class LlmDecisionAdvisor:
             "- It does not override hard constraints or SafetyGate.\n"
             "- It does not authorize actions outside the candidates list.\n"
             "- Use it to break trade-offs among available candidate_id options.\n\n"
+            "REFLECTION HINTS:\n"
+            "- reflection_hints summarize recent decision failures.\n"
+            "- They are advisory only and never override hard constraints, candidate facts, or SafetyGate.\n"
+            "- Do not invent actions or candidate_ids from reflection_hints.\n"
+            "- Use them to avoid repeating recent mistakes when trade-offs are otherwise close.\n\n"
             "CONTINUOUS REST:\n"
             "- A rest candidate may be partial progress, not full satisfaction.\n"
             "- actually_satisfies_after_this_wait=false means this wait extends the streak but does not satisfy the full continuous-rest requirement yet.\n"
@@ -168,7 +177,13 @@ class LlmDecisionAdvisor:
                 desc["completion_condition"] = c.facts.get("completion_condition")
                 desc["materialization_reason"] = c.facts.get("materialization_reason")
                 desc["penalty_if_missed"] = c.facts.get("penalty_if_missed", 0)
+                desc["urgency"] = c.facts.get("urgency")
+                desc["must_do_now"] = bool(c.facts.get("must_do_now"))
+                desc["latest_safe_start_time"] = c.facts.get("latest_safe_start_time")
+                desc["penalty_at_risk"] = c.facts.get("penalty_at_risk")
+                desc["opportunity_cost_hint"] = c.facts.get("opportunity_cost_hint")
                 desc["stuck_suspected"] = bool(c.facts.get("stuck_suspected"))
+                desc["regression_suspected"] = bool(c.facts.get("regression_suspected"))
             return desc
 
         valid_desc = [_build_desc(c) for c in context.valid_candidates]
@@ -188,6 +203,7 @@ class LlmDecisionAdvisor:
             "monthly_deadhead_km": round(state.monthly_deadhead_km, 1),
             "preferences": context.raw_preferences,
             "day_plan": context.day_plan,
+            "reflection_hints": context.reflection_hints,
             "valid_candidates": valid_desc,
             "soft_risk_candidates": soft_desc,
             "recent_actions": context.recent_actions[-5:],

@@ -52,12 +52,15 @@ def build_default_graph(api: SimulationApiPort) -> GraphRunner:
     from agent.phase3.graph_nodes.observe_node import ObserveNode
     from agent.phase3.graph_nodes.planning_node import PlanningNode
     from agent.phase3.graph_nodes.preference_node import PreferenceNode
+    from agent.phase3.graph_nodes.reflection_node import MemoryUpdateNode, ReflectionNode
     from agent.phase3.graph_nodes.runtime_node import RuntimeNode
     from agent.phase3.graph_nodes.safety_node import SafetyNode
+    from agent.phase3.memory.reflection_tool import ReflectionTool
     from agent.phase3.planning.day_plan_store import DayPlanStore
 
     day_plan_store = DayPlanStore()
     strategic_planner = StrategicPlannerAgent(api)
+    reflection_tool = ReflectionTool()
 
     return GraphRunner(
         nodes=[
@@ -67,9 +70,11 @@ def build_default_graph(api: SimulationApiPort) -> GraphRunner:
             CandidateNode(),
             ConstraintNode(),
             PlanningNode(strategic_planner, day_plan_store),
+            ReflectionNode(reflection_tool),
             AdvisorNode(api),
             SafetyNode(),
             EmitNode(),
+            MemoryUpdateNode(reflection_tool),
         ],
         trace_logger=TraceLogger(),
     )

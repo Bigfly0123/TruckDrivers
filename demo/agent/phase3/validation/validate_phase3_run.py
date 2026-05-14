@@ -47,9 +47,10 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
 
     day_plan_stats = _day_plan_stats(graph_events, decisions)
     goal_stats = _goal_layer_stats(decisions)
+    reflection_stats = _reflection_stats(decisions)
 
     lines = [
-        "# Phase 3.2 Validation Report",
+        "# Phase 3.3 Validation Report",
         "",
         "## Run Summary",
         f"- drivers: {len(drivers)}",
@@ -72,6 +73,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"- day_plan_risk_focus_present_rate: {day_plan_stats['risk_focus_present_rate']}",
         f"- decisions_with_goal_candidates: {goal_stats['decisions_with_goal_candidates']}",
         f"- selected_goal_candidate_count: {goal_stats['selected_goal_candidate_count']}",
+        f"- decisions_with_reflection_hints: {reflection_stats['decisions_with_reflection_hints']}",
         "",
         "## Node Errors",
     ]
@@ -97,6 +99,27 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
 
     lines.extend([
         "",
+        "## Reflection Memory",
+        "| metric | value |",
+        "|---|---:|",
+        f"| decisions_with_reflection_hints | {reflection_stats['decisions_with_reflection_hints']} |",
+        f"| active_reflection_hint_count_total | {reflection_stats['active_hint_count_total']} |",
+        f"| reflection_new_failure_count | {reflection_stats['new_failure_count']} |",
+        f"| reflection_new_hint_count | {reflection_stats['new_hint_count']} |",
+        f"| reflection_filtered_illegal_fields | {reflection_stats['filtered_illegal_fields']} |",
+        "",
+        "### Reflection Failure Types",
+        "| failure_type | count |",
+        "|---|---:|",
+    ])
+    if reflection_stats["failure_types"]:
+        for failure_type, count in reflection_stats["failure_types"].most_common():
+            lines.append(f"| {failure_type} | {count} |")
+    else:
+        lines.append("| none | 0 |")
+
+    lines.extend([
+        "",
         "## Goal Candidate Layer",
         "| metric | value |",
         "|---|---:|",
@@ -107,6 +130,25 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"| avg_goal_candidate_count | {goal_stats['avg_goal_candidate_count']} |",
         f"| goal_materialization_failure_decisions | {goal_stats['failure_decisions']} |",
         f"| stuck_goal_decisions | {goal_stats['stuck_goal_decisions']} |",
+        f"| selected_goal_must_do_now_count | {goal_stats['selected_must_do_now_count']} |",
+        f"| selected_low_medium_goal_count | {goal_stats['selected_low_medium_goal_count']} |",
+        f"| profitable_valid_order_but_selected_rest_count | {goal_stats['profitable_valid_order_but_selected_rest_count']} |",
+        f"| rest_opportunity_cost_sum | {goal_stats['rest_opportunity_cost_sum']} |",
+        f"| hold_candidate_generated_count | {goal_stats['hold_candidate_generated_count']} |",
+        f"| ordered_steps_regression_count | {goal_stats['ordered_steps_regression_count']} |",
+        f"| rest_not_urgent_count | {goal_stats['rest_not_urgent_count']} |",
+        "",
+        "### Selected Goal By Urgency",
+        "| urgency | count |",
+        "|---|---:|",
+    ])
+    if goal_stats["selected_goal_by_urgency"]:
+        for urgency, count in goal_stats["selected_goal_by_urgency"].most_common():
+            lines.append(f"| {urgency} | {count} |")
+    else:
+        lines.append("| none | 0 |")
+
+    lines.extend([
         "",
         "### Goal Materialization Failures",
         "| reason | count |",
@@ -161,7 +203,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     else:
         lines.append("| all | none | 0 |")
 
-    lines.extend(["", "## Phase 3.2 Acceptance"])
+    lines.extend(["", "## Phase 3.3 Acceptance"])
     checks = {
         "graph events present": bool(graph_events),
         "decision summaries present": bool(decisions),
@@ -176,6 +218,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         "day plan risk focus present rate >= 0.90": day_plan_stats["risk_focus_present_rate_value"] >= 0.90,
         "day plan language is zh": day_plan_stats["language_mismatch_count"] == 0,
         "goal layer fields present": bool(decisions) and all("goal_candidate_count" in d for d in decisions),
+        "reflection fields present": bool(decisions) and all("active_reflection_hint_count" in d for d in decisions),
     }
     for name, passed in checks.items():
         lines.append(f"- {name}: {'pass' if passed else 'fail'}")
@@ -318,6 +361,14 @@ def _goal_layer_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_counts: list[int] = []
     failure_counts: Counter[str] = Counter()
     selected_goal_candidate_count = 0
+    selected_must_do_now_count = 0
+    selected_low_medium_goal_count = 0
+    profitable_valid_order_but_selected_rest_count = 0
+    rest_opportunity_cost_sum = 0.0
+    hold_candidate_generated_count = 0
+    ordered_steps_regression_count = 0
+    rest_not_urgent_count = 0
+    selected_goal_by_urgency: Counter[str] = Counter()
     stuck_goal_decisions = 0
     failure_decisions = 0
     decisions_with_active_goals = 0
@@ -334,9 +385,25 @@ def _goal_layer_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
             decisions_with_goal_candidates += 1
         if decision.get("selected_candidate_goal_id"):
             selected_goal_candidate_count += 1
+            urgency = str(decision.get("selected_candidate_goal_urgency") or "unknown")
+            selected_goal_by_urgency[urgency] += 1
+            if decision.get("selected_candidate_must_do_now"):
+                selected_must_do_now_count += 1
+            if urgency in {"low", "medium"}:
+                selected_low_medium_goal_count += 1
         stuck = _safe_int(decision.get("goal_stuck_suspected_count"))
         if stuck > 0:
             stuck_goal_decisions += 1
+        diagnosis = decision.get("diagnosis") if isinstance(decision.get("diagnosis"), dict) else {}
+        if diagnosis.get("profitable_valid_order_but_selected_rest"):
+            profitable_valid_order_but_selected_rest_count += 1
+            try:
+                rest_opportunity_cost_sum += float(diagnosis.get("rest_opportunity_cost") or 0.0)
+            except (TypeError, ValueError):
+                pass
+        hold_candidate_generated_count += _safe_int(decision.get("hold_candidate_generated_count"))
+        ordered_steps_regression_count += _safe_int(decision.get("ordered_steps_regression_count"))
+        rest_not_urgent_count += _safe_int(decision.get("rest_not_urgent_count"))
         failures = decision.get("goal_materialization_failures")
         if isinstance(failures, dict) and failures:
             failure_decisions += 1
@@ -352,6 +419,43 @@ def _goal_layer_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         "failure_counts": failure_counts,
         "failure_decisions": failure_decisions,
         "stuck_goal_decisions": stuck_goal_decisions,
+        "selected_goal_by_urgency": selected_goal_by_urgency,
+        "selected_must_do_now_count": selected_must_do_now_count,
+        "selected_low_medium_goal_count": selected_low_medium_goal_count,
+        "profitable_valid_order_but_selected_rest_count": profitable_valid_order_but_selected_rest_count,
+        "rest_opportunity_cost_sum": round(rest_opportunity_cost_sum, 2),
+        "hold_candidate_generated_count": hold_candidate_generated_count,
+        "ordered_steps_regression_count": ordered_steps_regression_count,
+        "rest_not_urgent_count": rest_not_urgent_count,
+    }
+
+
+def _reflection_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    failure_types: Counter[str] = Counter()
+    decisions_with_reflection_hints = 0
+    active_hint_count_total = 0
+    new_failure_count = 0
+    new_hint_count = 0
+    filtered_illegal_fields = 0
+    for decision in decisions:
+        active_count = _safe_int(decision.get("active_reflection_hint_count"))
+        active_hint_count_total += active_count
+        if active_count > 0:
+            decisions_with_reflection_hints += 1
+        new_failure_count += _safe_int(decision.get("reflection_new_failure_count"))
+        new_hint_count += _safe_int(decision.get("reflection_new_hint_count"))
+        filtered_illegal_fields += _safe_int(decision.get("reflection_filtered_illegal_fields"))
+        raw_types = decision.get("reflection_failure_types")
+        if isinstance(raw_types, dict):
+            for failure_type, count in raw_types.items():
+                failure_types[str(failure_type)] += _safe_int(count)
+    return {
+        "decisions_with_reflection_hints": decisions_with_reflection_hints,
+        "active_hint_count_total": active_hint_count_total,
+        "new_failure_count": new_failure_count,
+        "new_hint_count": new_hint_count,
+        "filtered_illegal_fields": filtered_illegal_fields,
+        "failure_types": failure_types,
     }
 
 
