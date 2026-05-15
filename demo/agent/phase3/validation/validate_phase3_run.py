@@ -25,7 +25,14 @@ def main() -> None:
     report = build_report(graph_events, decisions)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
+    diagnostics = build_phase3_4_5_diagnostics(graph_events, decisions)
+    diagnostics_path = repo_demo / "results" / "phase3_4_5_diagnostics.json"
+    diagnostics_path.write_text(json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding="utf-8")
+    driver_summary_path = repo_demo / "results" / "phase3_4_5_driver_summary.md"
+    driver_summary_path.write_text(build_driver_summary(decisions), encoding="utf-8")
     print(f"wrote {output_path}")
+    print(f"wrote {diagnostics_path}")
+    print(f"wrote {driver_summary_path}")
 
 
 def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, Any]]) -> str:
@@ -51,7 +58,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     opportunity_stats = _opportunity_stats(decisions)
 
     lines = [
-        "# Phase 3.4 Validation Report",
+        "# Phase 3.4.5 Validation Report",
         "",
         "## Run Summary",
         f"- drivers: {len(drivers)}",
@@ -78,6 +85,10 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"- decisions_with_opportunity_facts: {opportunity_stats['decisions_with_opportunity_facts']}",
         f"- high_cost_wait_selected_count: {opportunity_stats['high_cost_wait_selected_count']}",
         f"- advisor_ignored_best_long_term_count: {opportunity_stats['advisor_ignored_best_long_term_count']}",
+        f"- advisor_unknown_candidate_count: {opportunity_stats['advisor_unknown_candidate_count']}",
+        f"- unknown_candidate_recovery_count: {opportunity_stats['unknown_candidate_recovery_count']}",
+        f"- unknown_candidate_direct_wait_count: {opportunity_stats['unknown_candidate_direct_wait_count']}",
+        f"- fallback_with_profitable_order_count: {opportunity_stats['fallback_with_profitable_order_count']}",
         "",
         "## Node Errors",
     ]
@@ -115,6 +126,15 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"| future_value_used_in_reason_count | {opportunity_stats['future_value_used_in_reason_count']} |",
         f"| advisor_ignored_best_long_term_count | {opportunity_stats['advisor_ignored_best_long_term_count']} |",
         f"| target_cargo_unavailable_but_high_wait_cost_count | {opportunity_stats['target_cargo_unavailable_but_high_wait_cost_count']} |",
+        f"| advisor_unknown_candidate_count | {opportunity_stats['advisor_unknown_candidate_count']} |",
+        f"| unknown_candidate_recovery_count | {opportunity_stats['unknown_candidate_recovery_count']} |",
+        f"| unknown_candidate_direct_wait_count | {opportunity_stats['unknown_candidate_direct_wait_count']} |",
+        f"| fallback_with_profitable_order_count | {opportunity_stats['fallback_with_profitable_order_count']} |",
+        f"| recovery_used_count | {opportunity_stats['recovery_used_count']} |",
+        f"| non_selectable_candidate_id_exposed_count | {opportunity_stats['non_selectable_candidate_id_exposed_count']} |",
+        f"| profitable_hard_invalid_order_count_total | {opportunity_stats['profitable_hard_invalid_order_count_total']} |",
+        f"| profitable_hard_invalid_order_net_sum | {opportunity_stats['profitable_hard_invalid_order_net_sum']} |",
+        f"| hard_soft_boundary_reclassification_count | {opportunity_stats['hard_soft_boundary_reclassification_count']} |",
         "",
         "### Wait Reason Categories",
         "| category | count |",
@@ -123,6 +143,30 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     if opportunity_stats["wait_reason_categories"]:
         for category, count in opportunity_stats["wait_reason_categories"].most_common():
             lines.append(f"| {category} | {count} |")
+    else:
+        lines.append("| none | 0 |")
+
+    lines.extend([
+        "",
+        "### Wait Purposes",
+        "| purpose | count |",
+        "|---|---:|",
+    ])
+    if opportunity_stats["wait_purposes"]:
+        for purpose, count in opportunity_stats["wait_purposes"].most_common():
+            lines.append(f"| {purpose} | {count} |")
+    else:
+        lines.append("| none | 0 |")
+
+    lines.extend([
+        "",
+        "### Hard Invalid Audit Classes",
+        "| class | count |",
+        "|---|---:|",
+    ])
+    if opportunity_stats["hard_invalid_audit_classes"]:
+        for audit_class, count in opportunity_stats["hard_invalid_audit_classes"].most_common():
+            lines.append(f"| {audit_class} | {count} |")
     else:
         lines.append("| none | 0 |")
 
@@ -232,7 +276,7 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
     else:
         lines.append("| all | none | 0 |")
 
-    lines.extend(["", "## Phase 3.4 Acceptance"])
+    lines.extend(["", "## Phase 3.4.5 Acceptance"])
     checks = {
         "graph events present": bool(graph_events),
         "decision summaries present": bool(decisions),
@@ -250,11 +294,115 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         "reflection fields present": bool(decisions) and all("active_reflection_hint_count" in d for d in decisions),
         "opportunity fields present": bool(decisions) and all("opportunity_facts_count" in d for d in decisions),
         "future value fields present": bool(decisions) and all("candidate_count_with_future_value" in d for d in decisions),
+        "advisor summary does not expose non-selectable candidates": opportunity_stats["non_selectable_candidate_id_exposed_count"] == 0,
+        "unknown candidate recovery fields present": bool(decisions) and all("advisor_unknown_candidate" in d for d in decisions),
+        "unknown candidate direct wait count is zero": opportunity_stats["unknown_candidate_direct_wait_count"] == 0,
+        "wait purpose fields present for waits": opportunity_stats["wait_missing_purpose_count"] == 0,
+        "hard invalid audit fields present": bool(decisions) and all("hard_invalid_reason_classification" in d for d in decisions),
+        "hard/soft boundary reclassification field present": bool(decisions) and all("hard_soft_boundary_reclassification_count" in d for d in decisions),
     }
     for name, passed in checks.items():
         lines.append(f"- {name}: {'pass' if passed else 'fail'}")
     ready = all(checks.values())
     lines.append(f"- ready for next phase: {'yes' if ready else 'no'}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_phase3_4_5_diagnostics(
+    graph_events: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    action_distribution = _action_distribution(decisions)
+    opportunity_stats = _opportunity_stats(decisions)
+    goal_stats = _goal_layer_stats(decisions)
+    hard_counts = Counter()
+    valid_counts: list[int] = []
+    soft_counts: list[int] = []
+    hard_invalid_counts: list[int] = []
+    for decision in decisions:
+        valid_counts.append(_safe_int(decision.get("valid_count")))
+        soft_counts.append(_safe_int(decision.get("soft_risk_count")))
+        hard_invalid_counts.append(_safe_int(decision.get("hard_invalid_count")))
+        reasons = decision.get("hard_invalid_reason_counts")
+        if isinstance(reasons, dict):
+            for reason, count in reasons.items():
+                hard_counts[str(reason)] += _safe_int(count)
+    total_actions = Counter()
+    for counts in action_distribution.values():
+        total_actions.update(counts)
+    return {
+        "total_decisions": len(decisions),
+        "total_graph_events": len(graph_events),
+        "take_order_count": total_actions.get("take_order", 0),
+        "wait_count": total_actions.get("wait", 0),
+        "reposition_count": total_actions.get("reposition", 0),
+        "fallback_wait_count": sum(1 for d in decisions if d.get("fallback_used")),
+        "unknown_wait_count": opportunity_stats["wait_purposes"].get("unknown_wait", 0),
+        "goal_purpose_wait_count": sum(
+            opportunity_stats["wait_purposes"].get(key, 0)
+            for key in ("goal_wait", "goal_hold_wait", "home_window_wait", "forbid_window_wait", "rest_progress_wait")
+        ),
+        "advisor_unknown_candidate_count": opportunity_stats["advisor_unknown_candidate_count"],
+        "unknown_candidate_recovery_count": opportunity_stats["unknown_candidate_recovery_count"],
+        "unknown_candidate_direct_wait_count": opportunity_stats["unknown_candidate_direct_wait_count"],
+        "fallback_with_profitable_order_count": opportunity_stats["fallback_with_profitable_order_count"],
+        "hard_invalid_profitable_order_count": opportunity_stats["profitable_hard_invalid_order_count_total"],
+        "hard_invalid_profitable_order_net_sum": opportunity_stats["profitable_hard_invalid_order_net_sum"],
+        "hard_soft_boundary_reclassification_count": sum(_safe_int(d.get("hard_soft_boundary_reclassification_count")) for d in decisions),
+        "avg_executable_candidate_count": _avg_ints([v + s for v, s in zip(valid_counts, soft_counts)]),
+        "avg_valid_order_count": _avg_field(decisions, "valid_order_count"),
+        "avg_soft_risk_order_count": _avg_field(decisions, "soft_risk_order_count"),
+        "avg_hard_invalid_count": _avg_ints(hard_invalid_counts),
+        "wait_purpose_counts": dict(opportunity_stats["wait_purposes"].most_common()),
+        "hard_invalid_reason_counts": dict(hard_counts.most_common(20)),
+        "hard_invalid_audit_classes": dict(opportunity_stats["hard_invalid_audit_classes"].most_common()),
+        "goal_stats": {
+            "profitable_valid_order_but_selected_rest_count": goal_stats["profitable_valid_order_but_selected_rest_count"],
+            "rest_opportunity_cost_sum": goal_stats["rest_opportunity_cost_sum"],
+        },
+    }
+
+
+def build_driver_summary(decisions: list[dict[str, Any]]) -> str:
+    drivers = sorted({str(d.get("driver_id") or "") for d in decisions if d.get("driver_id")})
+    action_distribution = _action_distribution(decisions)
+    lines = [
+        "# Phase 3.4.5 Driver Summary",
+        "",
+        "| driver | decisions | take_order | wait | reposition | fallback | unknown_candidate | recovery | fallback_with_profit | hard_invalid_top | wait_purpose_top |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+    ]
+    for driver in drivers:
+        rows = [d for d in decisions if str(d.get("driver_id") or "") == driver]
+        counts = action_distribution[driver]
+        hard_counts: Counter[str] = Counter()
+        wait_purposes: Counter[str] = Counter()
+        unknown = 0
+        recovery = 0
+        fallback_with_profit = 0
+        for decision in rows:
+            if decision.get("advisor_unknown_candidate"):
+                unknown += 1
+            if decision.get("recovery_used"):
+                recovery += 1
+            diagnosis = decision.get("diagnosis") if isinstance(decision.get("diagnosis"), dict) else {}
+            if diagnosis.get("fallback_with_profitable_order"):
+                fallback_with_profit += 1
+            reasons = decision.get("hard_invalid_reason_counts")
+            if isinstance(reasons, dict):
+                for reason, count in reasons.items():
+                    hard_counts[str(reason)] += _safe_int(count)
+            purpose = decision.get("selected_candidate_wait_purpose") or diagnosis.get("selected_candidate_wait_purpose")
+            if purpose:
+                wait_purposes[str(purpose)] += 1
+        lines.append(
+            f"| {driver} | {len(rows)} | {counts.get('take_order', 0)} | {counts.get('wait', 0)} | "
+            f"{counts.get('reposition', 0)} | {counts.get('fallback', 0)} | {unknown} | {recovery} | "
+            f"{fallback_with_profit} | {_top_counter_label(hard_counts)} | {_top_counter_label(wait_purposes)} |"
+        )
+    if not drivers:
+        lines.append("| all | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | none | none |")
     lines.append("")
     return "\n".join(lines)
 
@@ -302,6 +450,14 @@ def _warning_counts(decisions: list[dict[str, Any]]) -> Counter[tuple[str, str]]
             counts[(driver, "only_wait_candidates_available")] += 1
         if diagnosis.get("safety_rejected_advisor_choice"):
             counts[(driver, "safety_rejected_advisor_choice")] += 1
+        if diagnosis.get("advisor_unknown_candidate") or decision.get("advisor_unknown_candidate"):
+            counts[(driver, "advisor_unknown_candidate")] += 1
+        if diagnosis.get("unknown_candidate_direct_wait"):
+            counts[(driver, "unknown_candidate_direct_wait")] += 1
+        if diagnosis.get("fallback_with_profitable_order"):
+            counts[(driver, "fallback_with_profitable_order")] += 1
+        if decision.get("recovery_used") or diagnosis.get("recovery_used"):
+            counts[(driver, "recovery_used")] += 1
     return counts
 
 
@@ -492,6 +648,8 @@ def _reflection_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
     wait_reason_categories: Counter[str] = Counter()
+    wait_purposes: Counter[str] = Counter()
+    hard_invalid_audit_classes: Counter[str] = Counter()
     decisions_with_opportunity_facts = 0
     candidate_count_with_future_value_total = 0
     wait_opportunity_cost_sum = 0.0
@@ -501,6 +659,16 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
     future_value_used_in_reason_count = 0
     advisor_ignored_best_long_term_count = 0
     target_cargo_unavailable_but_high_wait_cost_count = 0
+    advisor_unknown_candidate_count = 0
+    unknown_candidate_recovery_count = 0
+    unknown_candidate_direct_wait_count = 0
+    fallback_with_profitable_order_count = 0
+    recovery_used_count = 0
+    non_selectable_candidate_id_exposed_count = 0
+    profitable_hard_invalid_order_count_total = 0
+    profitable_hard_invalid_order_net_sum = 0.0
+    wait_missing_purpose_count = 0
+    hard_soft_boundary_reclassification_count = 0
     for decision in decisions:
         if _safe_int(decision.get("opportunity_facts_count")) > 0:
             decisions_with_opportunity_facts += 1
@@ -522,14 +690,51 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         category = diagnosis.get("wait_reason_category")
         if category:
             wait_reason_categories[str(category)] += 1
+        final_action = decision.get("final_action") if isinstance(decision.get("final_action"), dict) else {}
+        selected_is_wait = final_action.get("action") == "wait" or decision.get("selected_candidate_action") == "wait"
+        purpose = decision.get("selected_candidate_wait_purpose") or diagnosis.get("selected_candidate_wait_purpose")
+        if selected_is_wait:
+            if purpose:
+                wait_purposes[str(purpose)] += 1
+            else:
+                wait_missing_purpose_count += 1
         if diagnosis.get("high_cost_wait_selected"):
             high_cost_wait_selected_count += 1
         if diagnosis.get("advisor_ignored_best_long_term"):
             advisor_ignored_best_long_term_count += 1
         if diagnosis.get("target_cargo_unavailable_but_high_wait_cost"):
             target_cargo_unavailable_but_high_wait_cost_count += 1
+        advisor_unknown = bool(decision.get("advisor_unknown_candidate") or diagnosis.get("advisor_unknown_candidate"))
+        recovery_used = bool(decision.get("recovery_used") or diagnosis.get("recovery_used"))
+        if advisor_unknown:
+            advisor_unknown_candidate_count += 1
+            if recovery_used:
+                unknown_candidate_recovery_count += 1
+        if diagnosis.get("unknown_candidate_direct_wait"):
+            unknown_candidate_direct_wait_count += 1
+        if diagnosis.get("fallback_with_profitable_order"):
+            fallback_with_profitable_order_count += 1
+        if recovery_used:
+            recovery_used_count += 1
+        for key in ("opportunity_summary", "advisor_opportunity_summary"):
+            summary = decision.get(key) if isinstance(decision.get(key), dict) else {}
+            if summary.get("non_selectable_candidate_id_exposed_to_advisor"):
+                non_selectable_candidate_id_exposed_count += 1
+                break
+        profitable_hard_invalid_order_count_total += _safe_int(decision.get("profitable_hard_invalid_order_count"))
+        hard_soft_boundary_reclassification_count += _safe_int(decision.get("hard_soft_boundary_reclassification_count"))
+        try:
+            profitable_hard_invalid_order_net_sum += float(decision.get("profitable_hard_invalid_order_net_sum") or 0.0)
+        except (TypeError, ValueError):
+            pass
+        classification = decision.get("hard_invalid_reason_classification")
+        if isinstance(classification, dict):
+            for audit_class in classification.values():
+                hard_invalid_audit_classes[str(audit_class)] += 1
     return {
         "wait_reason_categories": wait_reason_categories,
+        "wait_purposes": wait_purposes,
+        "hard_invalid_audit_classes": hard_invalid_audit_classes,
         "decisions_with_opportunity_facts": decisions_with_opportunity_facts,
         "candidate_count_with_future_value_total": candidate_count_with_future_value_total,
         "wait_opportunity_cost_sum": round(wait_opportunity_cost_sum, 2),
@@ -539,6 +744,16 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         "future_value_used_in_reason_count": future_value_used_in_reason_count,
         "advisor_ignored_best_long_term_count": advisor_ignored_best_long_term_count,
         "target_cargo_unavailable_but_high_wait_cost_count": target_cargo_unavailable_but_high_wait_cost_count,
+        "advisor_unknown_candidate_count": advisor_unknown_candidate_count,
+        "unknown_candidate_recovery_count": unknown_candidate_recovery_count,
+        "unknown_candidate_direct_wait_count": unknown_candidate_direct_wait_count,
+        "fallback_with_profitable_order_count": fallback_with_profitable_order_count,
+        "recovery_used_count": recovery_used_count,
+        "non_selectable_candidate_id_exposed_count": non_selectable_candidate_id_exposed_count,
+        "profitable_hard_invalid_order_count_total": profitable_hard_invalid_order_count_total,
+        "profitable_hard_invalid_order_net_sum": round(profitable_hard_invalid_order_net_sum, 2),
+        "wait_missing_purpose_count": wait_missing_purpose_count,
+        "hard_soft_boundary_reclassification_count": hard_soft_boundary_reclassification_count,
     }
 
 
@@ -553,6 +768,21 @@ def _count_field(decision: dict[str, Any], count_key: str, list_key: str) -> int
     if isinstance(list_value, list):
         return len(list_value)
     return 0
+
+
+def _avg_ints(values: list[int]) -> float:
+    return round(mean(values), 2) if values else 0.0
+
+
+def _avg_field(decisions: list[dict[str, Any]], key: str) -> float:
+    return _avg_ints([_safe_int(d.get(key)) for d in decisions])
+
+
+def _top_counter_label(counts: Counter[str]) -> str:
+    if not counts:
+        return "none"
+    key, count = counts.most_common(1)[0]
+    return f"{key}:{count}"
 
 
 def _safe_int(value: Any) -> int:

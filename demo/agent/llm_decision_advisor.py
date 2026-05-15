@@ -51,6 +51,7 @@ class AdvisorDecision:
     selected_candidate_id: str
     reason: str = ""
     accepted_risks: tuple[str, ...] = ()
+    candidate_known: bool = True
     used_opportunity_signal: bool = False
     opportunity_reason: str = ""
     why_not_best_long_term_candidate: str = ""
@@ -152,7 +153,7 @@ class LlmDecisionAdvisor:
                 desc["penalty_exposure"] = summary.estimated_penalty_exposure
                 desc["satisfies_constraints"] = summary.satisfies_constraints
                 if summary.constraint_impacts:
-                    desc["constraint_impacts"] = list(summary.constraint_impacts)
+                    desc["constraint_impacts"] = list(summary.constraint_impacts)[:3]
             opportunity = context.candidate_opportunity_facts.get(c.candidate_id, {})
             if opportunity:
                 for key in (
@@ -182,6 +183,8 @@ class LlmDecisionAdvisor:
                 desc["haul_distance_km"] = c.facts.get("haul_distance_km", 0)
             elif c.action == "wait":
                 desc["duration_minutes"] = c.params.get("duration_minutes", 0)
+                desc["wait_purpose"] = c.facts.get("wait_purpose")
+                desc["wait_expected_progress"] = c.facts.get("wait_expected_progress")
                 if c.facts.get("satisfies_constraint_type") == "continuous_rest":
                     desc["satisfies_constraint_type"] = "continuous_rest"
                     desc["satisfy_status"] = c.facts.get("satisfy_status")
@@ -239,8 +242,8 @@ class LlmDecisionAdvisor:
             "completed_orders": state.completed_order_count,
             "monthly_deadhead_km": round(state.monthly_deadhead_km, 1),
             "preferences": context.raw_preferences,
-            "day_plan": context.day_plan,
-            "reflection_hints": context.reflection_hints,
+            "day_plan": _compact_day_plan(context.day_plan),
+            "reflection_hints": _compact_reflection_hints(context.reflection_hints),
             "opportunity_summary": context.opportunity_summary,
             "valid_candidates": valid_desc,
             "soft_risk_candidates": soft_desc,
@@ -275,11 +278,19 @@ class LlmDecisionAdvisor:
                 candidate_id,
                 sorted(all_ids)[:10],
             )
-            return None
+            return AdvisorDecision(
+                selected_candidate_id=candidate_id,
+                reason=str(data.get("reason") or "").strip(),
+                accepted_risks=_accepted_risks(data),
+                candidate_known=False,
+                used_opportunity_signal=bool(data.get("used_opportunity_signal")),
+                opportunity_reason=str(data.get("opportunity_reason") or "").strip(),
+                why_not_best_long_term_candidate=str(data.get("why_not_best_long_term_candidate") or "").strip(),
+                wait_opportunity_cost_accepted_reason=str(data.get("wait_opportunity_cost_accepted_reason") or "").strip(),
+            )
 
         reason = str(data.get("reason") or "").strip()
-        accepted_risks_raw = data.get("accepted_risks") or []
-        accepted_risks = tuple(str(r) for r in accepted_risks_raw) if isinstance(accepted_risks_raw, list) else ()
+        accepted_risks = _accepted_risks(data)
 
         self._logger.info(
             "advisor chose candidate_id=%s reason=%s",
@@ -291,8 +302,41 @@ class LlmDecisionAdvisor:
             selected_candidate_id=candidate_id,
             reason=reason,
             accepted_risks=accepted_risks,
+            candidate_known=True,
             used_opportunity_signal=bool(data.get("used_opportunity_signal")),
             opportunity_reason=str(data.get("opportunity_reason") or "").strip(),
             why_not_best_long_term_candidate=str(data.get("why_not_best_long_term_candidate") or "").strip(),
             wait_opportunity_cost_accepted_reason=str(data.get("wait_opportunity_cost_accepted_reason") or "").strip(),
         )
+
+
+def _accepted_risks(data: dict[str, Any]) -> tuple[str, ...]:
+    accepted_risks_raw = data.get("accepted_risks") or []
+    return tuple(str(r) for r in accepted_risks_raw) if isinstance(accepted_risks_raw, list) else ()
+
+
+def _compact_day_plan(day_plan: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(day_plan, dict):
+        return {}
+    return {
+        "strategy_summary": day_plan.get("strategy_summary"),
+        "primary_goal": day_plan.get("primary_goal"),
+        "risk_focus": list(day_plan.get("risk_focus") or [])[:3],
+        "advisor_guidance": list(day_plan.get("advisor_guidance") or [])[:3],
+        "rest_strategy": day_plan.get("rest_strategy"),
+        "fallback_used": day_plan.get("fallback_used"),
+    }
+
+
+def _compact_reflection_hints(hints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for hint in hints[:3]:
+        if not isinstance(hint, dict):
+            continue
+        compact.append({
+            "failure_type": hint.get("failure_type"),
+            "priority": hint.get("priority"),
+            "message": hint.get("message") or hint.get("lesson"),
+            "confidence": hint.get("confidence"),
+        })
+    return compact

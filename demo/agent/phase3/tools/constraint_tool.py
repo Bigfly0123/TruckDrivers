@@ -6,7 +6,11 @@ from typing import Any
 from agent.agent_models import Candidate
 from agent.phase3.adapters.legacy_constraint_adapter import LegacyConstraintAdapter
 from agent.phase3.agent_state import AgentState
-from agent.phase3.utils.summaries import hard_invalid_reason_counts
+from agent.phase3.utils.summaries import (
+    hard_invalid_reason_classification,
+    hard_invalid_reason_counts,
+    hard_soft_boundary_reclassification_count,
+)
 
 
 class ConstraintTool:
@@ -61,7 +65,9 @@ class ConstraintTool:
             "best_soft_risk_order_id": best_soft.candidate_id if best_soft else None,
             "best_soft_risk_order_net_after_penalty": _net_after_penalty(best_soft) if best_soft else None,
             "hard_invalid_reason_counts": hard_counts,
+            "hard_invalid_reason_classification": hard_invalid_reason_classification(hard_counts),
             "dominant_hard_invalid_reason": dominant_reason,
+            "hard_soft_boundary_reclassification_count": hard_soft_boundary_reclassification_count(state.evaluated_candidates),
             "candidate_action_counts": dict(Counter(c.action for c in state.evaluated_candidates)),
         }
 

@@ -5,6 +5,13 @@ from agent.constraint_evaluator import ConstraintEvaluator
 from agent.llm_decision_advisor import CandidateSummary
 from agent.phase3.agent_state import AgentState
 
+_TRUE_HARD_REASONS = {
+    "invalid_cargo_geometry",
+    "load_time_window_expired",
+    "load_time_window_unreachable",
+    "end_month_unreachable",
+}
+
 
 class LegacyConstraintAdapter:
     def __init__(self) -> None:
@@ -21,8 +28,10 @@ class LegacyConstraintAdapter:
                 state.decision_state,
                 state.constraint_runtime_state,
             )
-            merged_hard = candidate.hard_invalid_reasons + result.hard_invalid_reasons
-            merged_soft = candidate.soft_risk_reasons + result.soft_risk_reasons
+            merged_hard, merged_soft, boundary_notes = _reclassify_constraint_boundary(
+                candidate.hard_invalid_reasons + result.hard_invalid_reasons,
+                candidate.soft_risk_reasons + result.soft_risk_reasons,
+            )
             penalty = result.estimated_penalty_exposure
             enriched_facts = dict(candidate.facts)
             enriched_facts["constraint_impacts"] = tuple(
@@ -39,6 +48,8 @@ class LegacyConstraintAdapter:
             net = float(enriched_facts.get("estimated_net", 0) or 0)
             enriched_facts["estimated_net_after_penalty"] = round(net - penalty, 2)
             enriched_facts["satisfies_constraints"] = result.satisfies_all_constraints
+            if boundary_notes:
+                enriched_facts["hard_soft_boundary_reclassification"] = tuple(boundary_notes)
             evaluated.append(Candidate(
                 candidate_id=candidate.candidate_id,
                 action=candidate.action,
@@ -68,3 +79,32 @@ class LegacyConstraintAdapter:
                 constraint_impacts=tuple(impacts_list),
             )
         return summaries
+
+
+def _reclassify_constraint_boundary(
+    hard_reasons: tuple[str, ...],
+    soft_reasons: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[dict[str, str], ...]]:
+    """Keep only simulator-impossible reasons hard; preference violations are soft risks."""
+
+    hard: list[str] = []
+    soft: list[str] = list(soft_reasons)
+    notes: list[dict[str, str]] = []
+    for reason in hard_reasons:
+        reason_text = str(reason)
+        if reason_text in _TRUE_HARD_REASONS:
+            hard.append(reason_text)
+            continue
+        if reason_text.startswith("constraint_"):
+            soft_reason = f"{reason_text}_risk"
+            if soft_reason not in soft:
+                soft.append(soft_reason)
+            notes.append({
+                "reason": reason_text,
+                "from": "hard_invalid",
+                "to": "soft_risk",
+                "classification": "should_be_soft",
+            })
+            continue
+        hard.append(reason_text)
+    return tuple(hard), tuple(soft), tuple(notes)

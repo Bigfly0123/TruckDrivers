@@ -8,7 +8,10 @@ from agent.phase3.agent_state import AgentState
 from agent.phase3.opportunity.destination_value_estimator import DestinationValueEstimator
 from agent.phase3.opportunity.future_value_estimator import FutureValueEstimator
 from agent.phase3.opportunity.market_snapshot import build_market_snapshot
-from agent.phase3.opportunity.opportunity_diagnostics import build_opportunity_summary
+from agent.phase3.opportunity.opportunity_diagnostics import (
+    build_advisor_opportunity_summary,
+    build_diagnostic_opportunity_summary,
+)
 from agent.phase3.opportunity.opportunity_schema import CandidateOpportunityFacts
 from agent.phase3.opportunity.wait_cost_estimator import WaitCostEstimator
 
@@ -42,18 +45,39 @@ class OpportunityValueTool:
         state.valid_candidates = _replace_candidates(state.valid_candidates, annotated_by_id)
         state.soft_risk_candidates = _replace_candidates(state.soft_risk_candidates, annotated_by_id)
         state.hard_invalid_candidates = _replace_candidates(state.hard_invalid_candidates, annotated_by_id)
+        executable_ids = {c.candidate_id for c in state.valid_candidates + state.soft_risk_candidates}
+        hard_reasons_by_id = {
+            c.candidate_id: tuple(c.hard_invalid_reasons)
+            for c in state.hard_invalid_candidates
+        }
         state.opportunity_facts = [facts.to_dict() for facts in facts_by_id.values()]
+        advisor_summary = build_advisor_opportunity_summary(
+            market=market,
+            facts=list(facts_by_id.values()),
+            executable_ids=executable_ids,
+            selected_candidate_id=state.selected_candidate_id,
+        )
+        diagnostic_summary = build_diagnostic_opportunity_summary(
+            market=market,
+            facts=list(facts_by_id.values()),
+            executable_ids=executable_ids,
+            hard_invalid_reasons_by_id=hard_reasons_by_id,
+        )
         state.opportunity_context = {
             "market_snapshot": market.to_dict(),
             "candidate_opportunity_facts": state.opportunity_facts,
+            "advisor_opportunity_summary": advisor_summary,
+            "diagnostic_opportunity_summary": diagnostic_summary,
         }
-        summary = build_opportunity_summary(
-            market=market,
-            facts=list(facts_by_id.values()),
-            selected_candidate_id=state.selected_candidate_id,
-        )
+        summary = {
+            **advisor_summary,
+            "advisor_opportunity_summary": advisor_summary,
+            "diagnostic_opportunity_summary": diagnostic_summary,
+        }
         state.tool_summaries["opportunity_value_tool"] = summary
         state.debug["opportunity_summary"] = summary
+        state.debug["advisor_opportunity_summary"] = advisor_summary
+        state.debug["diagnostic_opportunity_summary"] = diagnostic_summary
         return state
 
 
@@ -64,9 +88,36 @@ def _with_opportunity_facts(candidate: Candidate, facts: CandidateOpportunityFac
             continue
         if value is not None:
             merged[key] = value
+    if candidate.action == "wait":
+        merged.setdefault("wait_purpose", _wait_purpose(candidate))
+        merged.setdefault("wait_expected_progress", _wait_expected_progress(candidate))
     return replace(candidate, facts=merged)
 
 
 def _replace_candidates(candidates: list[Candidate], annotated_by_id: dict[str, Candidate]) -> list[Candidate]:
     return [annotated_by_id.get(candidate.candidate_id, candidate) for candidate in candidates]
 
+
+def _wait_purpose(candidate: Candidate) -> str:
+    satisfy_type = str(candidate.facts.get("satisfies_constraint_type") or candidate.facts.get("goal_type") or "")
+    step_type = str(candidate.facts.get("step_type") or "")
+    if satisfy_type == "continuous_rest":
+        return "rest_progress_wait"
+    if satisfy_type == "forbid_action_in_time_window":
+        return "forbid_window_wait"
+    if satisfy_type == "be_at_location_by_deadline" and step_type in {"stay_at_location", "stay_until_time", "hold_location_until_time"}:
+        return "home_window_wait"
+    if step_type == "hold_location_until_time":
+        return "goal_hold_wait"
+    if candidate.facts.get("goal_id"):
+        return "goal_wait"
+    if candidate.source == "system":
+        return "market_wait"
+    return "unknown_wait"
+
+
+def _wait_expected_progress(candidate: Candidate) -> bool:
+    purpose = _wait_purpose(candidate)
+    if purpose in {"rest_progress_wait", "forbid_window_wait", "home_window_wait", "goal_hold_wait", "goal_wait"}:
+        return True
+    return bool(candidate.facts.get("actually_satisfies_after_this_wait"))

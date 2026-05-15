@@ -9,6 +9,11 @@ from agent.phase3.adapters.legacy_constraint_adapter import LegacyConstraintAdap
 from agent.phase3.adapters.legacy_safety_adapter import fallback_wait
 from agent.phase3.agent_state import AgentState
 from agent.phase3.planning.day_plan import DayPlan
+from agent.phase3.tools.recovery import (
+    choose_recovery_candidate,
+    fallback_provenance,
+    recovery_candidate_summary,
+)
 from simkit.ports import SimulationApiPort
 
 
@@ -34,12 +39,18 @@ class AdvisorTool:
             "has_day_plan": bool(day_plan_context),
             "reflection_hints": list((state.reflection_context or {}).get("hints") or []),
             "active_reflection_hint_count": int((state.reflection_context or {}).get("active_reflection_hint_count") or 0),
-            "opportunity_summary": state.debug.get("opportunity_summary", {}),
+            "opportunity_summary": state.debug.get("advisor_opportunity_summary", state.debug.get("opportunity_summary", {})),
             "opportunity_facts_count": len(state.opportunity_facts),
         }
         if not executable:
             action, reason = fallback_wait(state.decision_state, "no_candidates_available")
             state.mark_fallback(reason, action)
+            state.debug["fallback_provenance"] = fallback_provenance(
+                source="advisor_tool",
+                reason=reason,
+                candidates=executable,
+                recovery_attempted=False,
+            )
             summary = self.summarize_advisor_result(state)
             state.tool_summaries["advisor_tool"] = summary
             state.debug["advisor_summary"] = summary
@@ -63,24 +74,76 @@ class AdvisorTool:
                 candidate_summaries=candidate_summaries,
                 day_plan=day_plan_context,
                 reflection_hints=list((state.reflection_context or {}).get("hints") or []),
-                opportunity_summary=state.debug.get("opportunity_summary", {}),
+                opportunity_summary=state.debug.get("advisor_opportunity_summary", state.debug.get("opportunity_summary", {})),
                 candidate_opportunity_facts=opportunity_by_id,
             )
         )
         if result is None:
-            action, reason = fallback_wait(state.decision_state, "llm_api_failed")
-            state.mark_fallback(reason, action)
+            recovered, recovery_reason = choose_recovery_candidate(executable)
+            if recovered is None:
+                action, reason = fallback_wait(state.decision_state, "llm_api_failed_no_recovery")
+                state.mark_fallback(reason, action)
+                state.debug["fallback_provenance"] = fallback_provenance(
+                    source="advisor_tool",
+                    reason=reason,
+                    candidates=executable,
+                    recovery_attempted=True,
+                    recovery_failed_reason=recovery_reason,
+                )
+            else:
+                state.selected_candidate_id = recovered.candidate_id
+                state.selected_candidate = recovered
+                state.advisor_result = {
+                    "selected_candidate_id": recovered.candidate_id,
+                    "reason": f"deterministic recovery after advisor returned no usable result: {recovery_reason}",
+                    "accepted_risks": [],
+                    "advisor_no_result": True,
+                    "recovery_used": True,
+                    "recovery_reason": recovery_reason,
+                    **recovery_candidate_summary(recovered),
+                }
         else:
             selected = _find_candidate(executable, result.selected_candidate_id)
             if selected is None:
-                action, reason = fallback_wait(state.decision_state, "advisor_invalid_candidate")
-                state.mark_fallback(reason, action)
-                state.selected_candidate_id = result.selected_candidate_id
+                recovered, recovery_reason = choose_recovery_candidate(executable)
+                if recovered is None:
+                    action, reason = fallback_wait(state.decision_state, "advisor_invalid_candidate_no_recovery")
+                    state.mark_fallback(reason, action)
+                    state.selected_candidate_id = result.selected_candidate_id
+                    state.debug["fallback_provenance"] = fallback_provenance(
+                        source="advisor_tool",
+                        reason=reason,
+                        candidates=executable,
+                        recovery_attempted=True,
+                        recovery_failed_reason=recovery_reason,
+                    )
+                else:
+                    state.selected_candidate_id = recovered.candidate_id
+                    state.selected_candidate = recovered
+                    state.advisor_result = {
+                        "selected_candidate_id": recovered.candidate_id,
+                        "reason": f"deterministic recovery after unknown candidate: {recovery_reason}",
+                        "accepted_risks": [],
+                        "advisor_unknown_candidate": True,
+                        "unknown_candidate_id": result.selected_candidate_id,
+                        "unknown_candidate_reason": result.reason,
+                        "executable_candidate_count_when_unknown": len(executable),
+                        "profitable_order_existed_when_unknown": any(
+                            c.action == "take_order" and (_fact_float(c, "estimated_net_after_penalty") or _fact_float(c, "estimated_net") or 0.0) > 0
+                            for c in executable
+                        ),
+                        "recovery_used": True,
+                        "recovery_reason": recovery_reason,
+                        **recovery_candidate_summary(recovered),
+                    }
             else:
                 state.advisor_result = {
                     "selected_candidate_id": result.selected_candidate_id,
                     "reason": result.reason,
                     "accepted_risks": list(result.accepted_risks),
+                    "advisor_unknown_candidate": not result.candidate_known,
+                    "unknown_candidate_id": None,
+                    "recovery_used": False,
                     "used_opportunity_signal": result.used_opportunity_signal,
                     "opportunity_reason": result.opportunity_reason,
                     "why_not_best_long_term_candidate": result.why_not_best_long_term_candidate,
@@ -95,7 +158,8 @@ class AdvisorTool:
 
     def summarize_advisor_result(self, state: AgentState) -> dict[str, Any]:
         selected = state.selected_candidate
-        best_long_term = _safe_float_or_none((state.debug.get("opportunity_summary", {}) or {}).get("best_long_term_score_hint"))
+        opportunity_summary = state.debug.get("advisor_opportunity_summary", state.debug.get("opportunity_summary", {})) or {}
+        best_long_term = _safe_float_or_none(opportunity_summary.get("best_long_term_score_hint"))
         selected_long_term = _fact_float(selected, "long_term_score_hint")
         return {
             "selected_candidate_id": state.selected_candidate_id,
@@ -109,6 +173,17 @@ class AdvisorTool:
             "opportunity_reason": state.advisor_result.get("opportunity_reason"),
             "why_not_best_long_term_candidate": state.advisor_result.get("why_not_best_long_term_candidate"),
             "wait_opportunity_cost_accepted_reason": state.advisor_result.get("wait_opportunity_cost_accepted_reason"),
+            "advisor_unknown_candidate": bool(state.advisor_result.get("advisor_unknown_candidate")),
+            "unknown_candidate_id": state.advisor_result.get("unknown_candidate_id"),
+            "advisor_no_result": bool(state.advisor_result.get("advisor_no_result")),
+            "recovery_used": bool(state.advisor_result.get("recovery_used")),
+            "recovery_reason": state.advisor_result.get("recovery_reason"),
+            "recovery_candidate_id": state.advisor_result.get("recovery_candidate_id"),
+            "recovery_candidate_action": state.advisor_result.get("recovery_candidate_action"),
+            "recovery_candidate_estimated_net": state.advisor_result.get("recovery_candidate_estimated_net"),
+            "recovery_candidate_long_term_score": state.advisor_result.get("recovery_candidate_long_term_score"),
+            "executable_candidate_count_when_unknown": state.advisor_result.get("executable_candidate_count_when_unknown"),
+            "profitable_order_existed_when_unknown": bool(state.advisor_result.get("profitable_order_existed_when_unknown")),
             "candidate_pool_size_sent_to_advisor": state.advisor_context.get("candidate_count", 0),
             "day_plan_primary_goal": (state.advisor_context.get("day_plan") or {}).get("primary_goal"),
             "day_plan_guidance_count": len((state.advisor_context.get("day_plan") or {}).get("advisor_guidance") or []),
@@ -122,7 +197,8 @@ class AdvisorTool:
             "selected_candidate_wait_opportunity_cost": _fact_float(selected, "wait_opportunity_cost"),
             "selected_candidate_destination_opportunity_score": _fact_float(selected, "destination_opportunity_score"),
             "best_long_term_score_hint": best_long_term,
-            "best_long_term_candidate_id": (state.debug.get("opportunity_summary", {}) or {}).get("best_long_term_candidate_id"),
+            "best_long_term_candidate_id": opportunity_summary.get("best_long_term_candidate_id"),
+            "best_long_term_candidate_selectable": bool(opportunity_summary.get("best_long_term_candidate_selectable", True)),
             "selected_vs_best_long_term_gap": round(best_long_term - selected_long_term, 2)
             if best_long_term is not None and selected_long_term is not None else None,
             "fallback_used": state.fallback_used,

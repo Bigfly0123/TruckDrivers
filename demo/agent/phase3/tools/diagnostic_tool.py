@@ -14,7 +14,8 @@ class DiagnosticTool:
         safety = state.debug.get("safety_summary", {})
         goal_summary = state.debug.get("goal_summary", {})
         reflection_summary = state.debug.get("reflection_summary", {})
-        opportunity_summary = state.debug.get("opportunity_summary", {})
+        opportunity_summary = state.debug.get("advisor_opportunity_summary") or state.debug.get("opportunity_summary", {})
+        fallback_meta = state.debug.get("fallback_provenance") or {}
         selected_action = advisor.get("selected_candidate_action")
         selected_facts = state.selected_candidate.facts if state.selected_candidate is not None else {}
         final_action_name = (state.final_action or {}).get("action")
@@ -34,6 +35,14 @@ class DiagnosticTool:
             "why_no_order_selected": _why_no_order_selected(state, constraint, selected_is_wait),
             "why_wait_selected": _why_wait_selected(state, constraint, selected_is_wait),
             "why_fallback_used": state.fallback_reason if state.fallback_used else None,
+            "fallback_with_profitable_order": bool(
+                state.fallback_used
+                and (has_profitable or fallback_meta.get("profitable_order_existed_before_fallback"))
+            ),
+            "fallback_wait_type": fallback_meta.get("fallback_wait_type"),
+            "fallback_source": fallback_meta.get("fallback_source"),
+            "executable_candidate_count_before_fallback": fallback_meta.get("executable_candidate_count_before_fallback"),
+            "profitable_order_existed_before_fallback": fallback_meta.get("profitable_order_existed_before_fallback"),
             "has_valid_profitable_order": has_profitable,
             "best_valid_order_id": constraint.get("best_valid_order_id"),
             "best_valid_order_net": best_net,
@@ -65,13 +74,29 @@ class DiagnosticTool:
             "active_reflection_hint_count": reflection_summary.get("active_reflection_hint_count", 0),
             "reflection_failure_types": reflection_summary.get("reflection_failure_types", {}),
             "wait_reason_category": _wait_reason_category(state, constraint, selected_facts, selected_is_wait),
+            "selected_candidate_wait_purpose": "fallback_wait" if state.fallback_used and selected_is_wait else selected_facts.get("wait_purpose"),
+            "selected_candidate_wait_expected_progress": False if state.fallback_used and selected_is_wait else selected_facts.get("wait_expected_progress"),
             "selected_candidate_wait_opportunity_cost": selected_facts.get("wait_opportunity_cost"),
             "selected_candidate_long_term_score_hint": selected_facts.get("long_term_score_hint"),
             "best_long_term_candidate_id": opportunity_summary.get("best_long_term_candidate_id"),
             "best_long_term_score_hint": opportunity_summary.get("best_long_term_score_hint"),
+            "best_executable_long_term_candidate_id": opportunity_summary.get("best_executable_long_term_candidate_id"),
+            "best_executable_long_term_score": opportunity_summary.get("best_executable_long_term_score"),
+            "best_long_term_candidate_selectable": opportunity_summary.get("best_long_term_candidate_selectable"),
             "selected_vs_best_long_term_gap": advisor.get("selected_vs_best_long_term_gap"),
             "advisor_ignored_best_long_term": _advisor_ignored_best_long_term(state, advisor, opportunity_summary),
             "high_cost_wait_selected": bool(selected_is_wait and float(selected_facts.get("wait_opportunity_cost") or 0.0) > 300.0),
+            "advisor_unknown_candidate": bool(advisor.get("advisor_unknown_candidate")),
+            "unknown_candidate_id": advisor.get("unknown_candidate_id"),
+            "advisor_no_result": bool(advisor.get("advisor_no_result")),
+            "recovery_used": bool(advisor.get("recovery_used")),
+            "recovery_reason": advisor.get("recovery_reason"),
+            "recovery_candidate_id": advisor.get("recovery_candidate_id"),
+            "unknown_candidate_direct_wait": bool(
+                advisor.get("advisor_unknown_candidate")
+                and selected_is_wait
+                and not advisor.get("recovery_used")
+            ),
             "target_cargo_unavailable_but_high_wait_cost": bool(
                 selected_is_wait
                 and selected_facts.get("target_cargo_visibility_status") in {"unavailable", "partially_visible"}

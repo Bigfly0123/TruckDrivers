@@ -18,6 +18,47 @@ def hard_invalid_reason_counts(candidates: list[Candidate]) -> dict[str, int]:
     return dict(counts.most_common(10))
 
 
+def hard_invalid_reason_classification(reasons: dict[str, int]) -> dict[str, str]:
+    return {reason: _classify_hard_invalid_reason(reason) for reason in reasons}
+
+
+def hard_soft_boundary_reclassification_count(candidates: list[Candidate]) -> int:
+    total = 0
+    for candidate in candidates:
+        notes = candidate.facts.get("hard_soft_boundary_reclassification")
+        if isinstance(notes, tuple):
+            total += len(notes)
+        elif isinstance(notes, list):
+            total += len(notes)
+    return total
+
+
+def profitable_hard_invalid_summary(candidates: list[Candidate], limit: int = 5) -> dict[str, Any]:
+    profitable = []
+    for candidate in candidates:
+        if candidate.action != "take_order":
+            continue
+        estimated_net = _fact_float(candidate, "estimated_net")
+        if estimated_net is not None and estimated_net > 0:
+            profitable.append(candidate)
+    top = sorted(profitable, key=lambda c: _fact_float(c, "estimated_net") or 0.0, reverse=True)[:limit]
+    return {
+        "profitable_hard_invalid_order_count": len(profitable),
+        "profitable_hard_invalid_order_net_sum": round(sum(_fact_float(c, "estimated_net") or 0.0 for c in profitable), 2),
+        "top_profitable_hard_invalid_examples": [
+            {
+                "candidate_id": c.candidate_id,
+                "action": c.action,
+                "cargo_id": c.params.get("cargo_id"),
+                "estimated_net": _fact_float(c, "estimated_net"),
+                "long_term_score_hint": _fact_float(c, "long_term_score_hint"),
+                "hard_invalid_reasons": list(c.hard_invalid_reasons),
+            }
+            for c in top
+        ],
+    }
+
+
 def sample_hard_invalid_candidates(candidates: list[Candidate], limit: int = 5) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     for candidate in candidates[:limit]:
@@ -62,12 +103,18 @@ def candidate_summary(state: AgentState) -> dict[str, Any]:
 
 
 def constraint_summary(state: AgentState) -> dict[str, Any]:
+    hard_counts = hard_invalid_reason_counts(state.hard_invalid_candidates)
+    profitable_summary = profitable_hard_invalid_summary(state.hard_invalid_candidates)
+    reclassified_count = hard_soft_boundary_reclassification_count(state.evaluated_candidates)
     return {
         "candidate_count": len(state.evaluated_candidates),
         "valid_count": len(state.valid_candidates),
         "soft_risk_count": len(state.soft_risk_candidates),
         "hard_invalid_count": len(state.hard_invalid_candidates),
-        "hard_invalid_reason_counts": hard_invalid_reason_counts(state.hard_invalid_candidates),
+        "hard_invalid_reason_counts": hard_counts,
+        "hard_invalid_reason_classification": hard_invalid_reason_classification(hard_counts),
+        "hard_soft_boundary_reclassification_count": reclassified_count,
+        **profitable_summary,
     }
 
 
@@ -80,9 +127,13 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
     diagnosis = state.debug.get("decision_diagnosis", {})
     day_plan = state.day_plan.to_advisor_context() if state.day_plan is not None else {}
     selected_facts = state.selected_candidate.facts if state.selected_candidate is not None else {}
+    selected_wait_purpose = "fallback_wait" if state.fallback_used else selected_facts.get("wait_purpose")
+    selected_wait_expected_progress = False if state.fallback_used else selected_facts.get("wait_expected_progress")
     goal_summary = state.debug.get("goal_summary", {})
     reflection_summary = state.debug.get("reflection_summary", {})
     opportunity_summary = state.debug.get("opportunity_summary", {})
+    diagnostic_opportunity_summary = state.debug.get("diagnostic_opportunity_summary", {})
+    profitable_hard_summary = profitable_hard_invalid_summary(state.hard_invalid_candidates)
     return {
         "driver_id": state.driver_id,
         "step_id": state.step_id,
@@ -105,6 +156,9 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "best_soft_risk_order_net_after_penalty": constraint.get("best_soft_risk_order_net_after_penalty"),
         "dominant_hard_invalid_reason": constraint.get("dominant_hard_invalid_reason"),
         "hard_invalid_reason_counts": hard_reason_counts,
+        "hard_invalid_reason_classification": hard_invalid_reason_classification(hard_reason_counts),
+        "hard_soft_boundary_reclassification_count": hard_soft_boundary_reclassification_count(state.evaluated_candidates),
+        **profitable_hard_summary,
         "top_hard_invalid_reasons": hard_reason_counts,
         "sample_hard_invalid_candidates": sample_hard_invalid_candidates(state.hard_invalid_candidates),
         "advisor_candidate_count": state.advisor_context.get("candidate_count", 0),
@@ -118,6 +172,8 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "reflection_new_failure_types": reflection_summary.get("new_failure_types", {}),
         "reflection_filtered_illegal_fields": reflection_summary.get("reflection_filtered_illegal_fields", 0),
         "opportunity_summary": opportunity_summary,
+        "advisor_opportunity_summary": state.debug.get("advisor_opportunity_summary", {}),
+        "diagnostic_opportunity_summary": diagnostic_opportunity_summary,
         "opportunity_facts_count": len(state.opportunity_facts),
         "candidate_count_with_future_value": opportunity_summary.get("candidate_count_with_future_value"),
         "wait_opportunity_cost_avg": opportunity_summary.get("wait_opportunity_cost_avg"),
@@ -161,6 +217,8 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "selected_candidate_opportunity_cost_hint": selected_facts.get("opportunity_cost_hint"),
         "selected_candidate_long_term_score_hint": selected_facts.get("long_term_score_hint"),
         "selected_candidate_wait_opportunity_cost": selected_facts.get("wait_opportunity_cost"),
+        "selected_candidate_wait_purpose": selected_wait_purpose,
+        "selected_candidate_wait_expected_progress": selected_wait_expected_progress,
         "selected_candidate_destination_opportunity_score": selected_facts.get("destination_opportunity_score"),
         "selected_candidate_future_value_estimate": selected_facts.get("future_value_estimate"),
         "selected_candidate_future_constraint_risk": selected_facts.get("future_constraint_risk"),
@@ -168,6 +226,7 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "selected_candidate_target_cargo_visibility_status": selected_facts.get("target_cargo_visibility_status"),
         "best_long_term_candidate_id": advisor.get("best_long_term_candidate_id"),
         "best_long_term_score_hint": advisor.get("best_long_term_score_hint"),
+        "best_long_term_candidate_selectable": advisor.get("best_long_term_candidate_selectable"),
         "selected_vs_best_long_term_gap": advisor.get("selected_vs_best_long_term_gap"),
         "selected_action": selected_action,
         "selected_candidate_action": advisor.get("selected_candidate_action") or selected_action,
@@ -180,12 +239,57 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "opportunity_reason": state.advisor_result.get("opportunity_reason"),
         "why_not_best_long_term_candidate": state.advisor_result.get("why_not_best_long_term_candidate"),
         "wait_opportunity_cost_accepted_reason": state.advisor_result.get("wait_opportunity_cost_accepted_reason"),
+        "advisor_unknown_candidate": advisor.get("advisor_unknown_candidate"),
+        "unknown_candidate_id": advisor.get("unknown_candidate_id"),
+        "advisor_no_result": advisor.get("advisor_no_result"),
+        "recovery_used": advisor.get("recovery_used"),
+        "recovery_reason": advisor.get("recovery_reason"),
+        "recovery_candidate_id": advisor.get("recovery_candidate_id"),
+        "recovery_candidate_action": advisor.get("recovery_candidate_action"),
+        "recovery_candidate_estimated_net": advisor.get("recovery_candidate_estimated_net"),
+        "recovery_candidate_long_term_score": advisor.get("recovery_candidate_long_term_score"),
+        "executable_candidate_count_when_unknown": advisor.get("executable_candidate_count_when_unknown"),
+        "profitable_order_existed_when_unknown": advisor.get("profitable_order_existed_when_unknown"),
         "safety_passed": state.safety_result.get("accepted"),
         "safety_accepted": state.safety_result.get("accepted"),
         "safety_rejected": safety.get("safety_rejected"),
         "safety_reject_reason": safety.get("safety_reject_reason"),
         "fallback_used": state.fallback_used,
         "fallback_reason": state.fallback_reason,
+        "fallback_wait_type": (state.debug.get("fallback_provenance") or {}).get("fallback_wait_type"),
+        "fallback_source": (state.debug.get("fallback_provenance") or {}).get("fallback_source"),
+        "executable_candidate_count_before_fallback": (state.debug.get("fallback_provenance") or {}).get("executable_candidate_count_before_fallback"),
+        "profitable_order_existed_before_fallback": (state.debug.get("fallback_provenance") or {}).get("profitable_order_existed_before_fallback"),
+        "fallback_recovery_attempted": (state.debug.get("fallback_provenance") or {}).get("recovery_attempted"),
+        "fallback_recovery_failed_reason": (state.debug.get("fallback_provenance") or {}).get("recovery_failed_reason"),
         "final_action": state.final_action,
         "diagnosis": diagnosis,
     }
+
+
+def _classify_hard_invalid_reason(reason: str) -> str:
+    if reason in {"load_time_window_expired", "load_time_window_unreachable", "invalid_cargo_geometry", "end_month_unreachable"}:
+        return "true_hard"
+    if reason in {
+        "constraint_max_distance",
+        "constraint_operate_within_area",
+        "constraint_forbid_action_in_time_window",
+        "constraint_avoid_zone",
+        "constraint_forbid_cargo_category",
+    }:
+        return "should_be_soft"
+    if reason.startswith("constraint_"):
+        return "unclear"
+    return "true_hard_or_needs_check"
+
+
+def _fact_float(candidate: Candidate, key: str) -> float | None:
+    value = candidate.facts.get(key)
+    if value is None and key == "estimated_net_after_penalty":
+        value = candidate.facts.get("estimated_net")
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None

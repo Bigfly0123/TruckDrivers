@@ -7,6 +7,7 @@ from agent.phase3.tools.safety_tool import (
     normalize_final_action,
     safe_fallback_wait,
 )
+from agent.phase3.tools.recovery import fallback_provenance
 
 
 class EmitNode:
@@ -25,6 +26,12 @@ class EmitNode:
         else:
             action, reason = safe_fallback_wait(state, "emit_missing_safe_action")
             state.mark_fallback(reason, action)
+            state.debug["fallback_provenance"] = fallback_provenance(
+                source="emit_node",
+                reason=reason,
+                candidates=state.valid_candidates + state.soft_risk_candidates,
+                recovery_attempted=False,
+            )
         diagnosis = self._diagnostic_tool.build_decision_diagnosis(state)
         _set_summary(state, self.node_name, {
             "final_action_type": (state.final_action or {}).get("action"),

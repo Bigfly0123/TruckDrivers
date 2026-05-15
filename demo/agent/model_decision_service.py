@@ -40,10 +40,28 @@ class ModelDecisionService:
                 return self._normalize_action(final_state.final_action)
             self._logger.warning("phase3 graph returned no final action for driver_id=%s", driver_id)
             state.mark_fallback("phase3_missing_final_action", {"action": "wait", "params": {"duration_minutes": 60}})
+            state.debug["fallback_provenance"] = {
+                "fallback_used": True,
+                "fallback_source": "model_decision_service",
+                "fallback_reason": "phase3_missing_final_action",
+                "fallback_wait_type": "unproven_fallback",
+                "executable_candidate_count_before_fallback": 0,
+                "profitable_order_existed_before_fallback": False,
+                "recovery_attempted": False,
+            }
             self._graph_runner.record_decision_summary(state)
         except Exception as exc:
             self._logger.exception("phase3 graph failed for driver_id=%s: %s", driver_id, exc)
             state.mark_fallback("phase3_unexpected_exception", {"action": "wait", "params": {"duration_minutes": 60}})
+            state.debug["fallback_provenance"] = {
+                "fallback_used": True,
+                "fallback_source": "model_decision_service",
+                "fallback_reason": "phase3_unexpected_exception",
+                "fallback_wait_type": "unproven_fallback",
+                "executable_candidate_count_before_fallback": 0,
+                "profitable_order_existed_before_fallback": False,
+                "recovery_attempted": False,
+            }
             self._graph_runner.record_decision_summary(state)
         return {"action": "wait", "params": {"duration_minutes": 60}}
 

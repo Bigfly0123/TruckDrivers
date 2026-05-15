@@ -1,31 +1,31 @@
 {
   "month": "2026-03",
-  "simulate_time_seconds": 9242.02,
+  "simulate_time_seconds": 7500.59,
   "simulation_duration_days": 31,
-  "completed_steps": 1681,
+  "completed_steps": 1243,
   "remaining_cargo_count": 0,
   "driver_completed_steps": {
-    "D001": 262,
-    "D002": 52,
-    "D003": 133,
-    "D004": 114,
-    "D005": 255,
-    "D006": 121,
-    "D007": 232,
-    "D008": 164,
-    "D009": 227,
-    "D010": 121
+    "D001": 237,
+    "D002": 55,
+    "D003": 86,
+    "D004": 69,
+    "D005": 134,
+    "D006": 78,
+    "D007": 137,
+    "D008": 192,
+    "D009": 189,
+    "D010": 66
   },
   "driver_result_files": {
-    "D001": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D001_20260514_205704.jsonl",
-    "D002": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D002_20260514_205704.jsonl",
-    "D003": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D003_20260514_205704.jsonl",
-    "D004": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D004_20260514_205704.jsonl",
-    "D005": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D005_20260514_205704.jsonl",
-    "D006": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D006_20260514_205704.jsonl",
-    "D007": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D007_20260514_205704.jsonl",
-    "D008": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D008_20260514_205704.jsonl",
-    "D009": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D009_20260514_205704.jsonl",
-    "D010": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D010_20260514_205704.jsonl"
+    "D001": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D001_20260515_013224.jsonl",
+    "D002": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D002_20260515_013224.jsonl",
+    "D003": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D003_20260515_013224.jsonl",
+    "D004": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D004_20260515_013224.jsonl",
+    "D005": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D005_20260515_013224.jsonl",
+    "D006": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D006_20260515_013224.jsonl",
+    "D007": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D007_20260515_013224.jsonl",
+    "D008": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D008_20260515_013224.jsonl",
+    "D009": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D009_20260515_013224.jsonl",
+    "D010": "E:\\its4learning\\car-demo-2.0\\demo\\results\\actions_202603_D010_20260515_013224.jsonl"
   }
 }
