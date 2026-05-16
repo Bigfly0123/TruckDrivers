@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from statistics import mean
 from typing import Any
 
-from agent.agent_models import Candidate
-from agent.geo_utils import haversine_km
+from agent.phase3.domain.agent_models import Candidate
+from agent.phase3.domain.geo_utils import haversine_km
 from agent.phase3.agent_state import AgentState
 from agent.phase3.opportunity.opportunity_schema import MarketSnapshot
 
@@ -12,8 +12,10 @@ NEARBY_RADIUS_KM = 80.0
 
 
 def build_market_snapshot(state: AgentState) -> MarketSnapshot:
-    valid_orders = [c for c in state.valid_candidates if c.action == "take_order"]
-    soft_orders = [c for c in state.soft_risk_candidates if c.action == "take_order"]
+    zero_risk = state.zero_risk_candidates or state.valid_candidates
+    risk_tradeoff = state.risk_tradeoff_candidates or state.soft_risk_candidates
+    valid_orders = [c for c in zero_risk if c.action == "take_order"]
+    soft_orders = [c for c in risk_tradeoff if c.action == "take_order"]
     profitable_valid = [c for c in valid_orders if _net(c) > 0]
     profitable_soft = [c for c in soft_orders if _net_after_penalty(c) > 0]
     best_valid = _best(valid_orders, _net)
@@ -84,7 +86,12 @@ def _net(candidate: Candidate | None) -> float:
 def _net_after_penalty(candidate: Candidate | None) -> float:
     if candidate is None:
         return 0.0
-    return _safe_float(candidate.facts.get("estimated_net_after_penalty", candidate.facts.get("estimated_net")))
+    return _safe_float(
+        candidate.facts.get(
+            "estimated_net_after_decision_penalty",
+            candidate.facts.get("estimated_net_after_penalty", candidate.facts.get("estimated_net")),
+        )
+    )
 
 
 def _best(candidates: list[Candidate], key_fn: Any) -> Candidate | None:
@@ -98,4 +105,3 @@ def _safe_float(value: Any) -> float:
         return float(value or 0.0)
     except (TypeError, ValueError):
         return 0.0
-

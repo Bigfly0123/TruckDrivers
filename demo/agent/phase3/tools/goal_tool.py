@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.agent_models import Candidate
+from agent.phase3.domain.agent_models import Candidate
 from agent.phase3.agent_state import AgentState
 from agent.phase3.goals.goal_builder import GoalBuilder
 from agent.phase3.goals.goal_diagnostics import summarize_goal_layer

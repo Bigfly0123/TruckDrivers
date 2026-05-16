@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any
 
-from agent.agent_models import Candidate
+from agent.phase3.domain.agent_models import Candidate
 from agent.phase3.agent_state import AgentState
 from agent.phase3.opportunity.destination_value_estimator import DestinationValueEstimator
 from agent.phase3.opportunity.future_value_estimator import FutureValueEstimator
@@ -20,7 +20,7 @@ class OpportunityValueTool:
     """Adds opportunity/future-value evidence to existing candidates.
 
     This tool never creates final actions and never changes hard-validity
-    categories. Advisor and SafetyGate remain responsible for selection and
+    categories. Advisor and final safety validation remain responsible for selection and
     final validation.
     """
 
@@ -45,7 +45,11 @@ class OpportunityValueTool:
         state.valid_candidates = _replace_candidates(state.valid_candidates, annotated_by_id)
         state.soft_risk_candidates = _replace_candidates(state.soft_risk_candidates, annotated_by_id)
         state.hard_invalid_candidates = _replace_candidates(state.hard_invalid_candidates, annotated_by_id)
-        executable_ids = {c.candidate_id for c in state.valid_candidates + state.soft_risk_candidates}
+        state.zero_risk_candidates = _replace_candidates(state.zero_risk_candidates, annotated_by_id)
+        state.risk_tradeoff_candidates = _replace_candidates(state.risk_tradeoff_candidates, annotated_by_id)
+        state.non_executable_candidates = _replace_candidates(state.non_executable_candidates, annotated_by_id)
+        state.executable_candidates = state.zero_risk_candidates + state.risk_tradeoff_candidates
+        executable_ids = {c.candidate_id for c in state.executable_candidates}
         hard_reasons_by_id = {
             c.candidate_id: tuple(c.hard_invalid_reasons)
             for c in state.hard_invalid_candidates
@@ -103,8 +107,6 @@ def _wait_purpose(candidate: Candidate) -> str:
     step_type = str(candidate.facts.get("step_type") or "")
     if satisfy_type == "continuous_rest":
         return "rest_progress_wait"
-    if satisfy_type == "forbid_action_in_time_window":
-        return "forbid_window_wait"
     if satisfy_type == "be_at_location_by_deadline" and step_type in {"stay_at_location", "stay_until_time", "hold_location_until_time"}:
         return "home_window_wait"
     if step_type == "hold_location_until_time":
@@ -118,6 +120,6 @@ def _wait_purpose(candidate: Candidate) -> str:
 
 def _wait_expected_progress(candidate: Candidate) -> bool:
     purpose = _wait_purpose(candidate)
-    if purpose in {"rest_progress_wait", "forbid_window_wait", "home_window_wait", "goal_hold_wait", "goal_wait"}:
+    if purpose in {"rest_progress_wait", "home_window_wait", "goal_hold_wait", "goal_wait"}:
         return True
     return bool(candidate.facts.get("actually_satisfies_after_this_wait"))

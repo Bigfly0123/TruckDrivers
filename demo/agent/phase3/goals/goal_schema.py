@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.agent_models import GeoPoint
+from agent.phase3.domain.agent_models import GeoPoint
 
 
 @dataclass(frozen=True)

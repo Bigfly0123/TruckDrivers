@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.agent_models import DecisionState
+from agent.phase3.domain.agent_models import DecisionState
 from agent.phase3.goals.completion_checkers import (
     accumulated_wait_at_point_after,
     first_visit_minute_at_point,

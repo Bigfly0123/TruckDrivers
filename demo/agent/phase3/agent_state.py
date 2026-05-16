@@ -1,12 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.agent_models import Candidate, DecisionState, PreferenceRule
-from agent.constraint_runtime import ConstraintRuntimeState
+from agent.phase3.domain.agent_models import Candidate, DecisionState, PreferenceRule
+from agent.phase3.constraints.constraint_runtime import ConstraintRuntimeState
 from agent.phase3.planning.day_plan import DayPlan
-from agent.preference_constraints import ConstraintSpec
+from agent.phase3.preferences.preference_constraints import ConstraintSpec
 
 
 @dataclass
@@ -30,12 +30,16 @@ class AgentState:
 
     raw_candidates: list[Candidate] = field(default_factory=list)
     base_candidates: list[Candidate] = field(default_factory=list)
-    legacy_satisfy_candidates: list[Candidate] = field(default_factory=list)
+    planner_satisfy_candidates: list[Candidate] = field(default_factory=list)
     goal_candidates: list[Candidate] = field(default_factory=list)
     evaluated_candidates: list[Candidate] = field(default_factory=list)
     valid_candidates: list[Candidate] = field(default_factory=list)
     soft_risk_candidates: list[Candidate] = field(default_factory=list)
     hard_invalid_candidates: list[Candidate] = field(default_factory=list)
+    executable_candidates: list[Candidate] = field(default_factory=list)
+    zero_risk_candidates: list[Candidate] = field(default_factory=list)
+    risk_tradeoff_candidates: list[Candidate] = field(default_factory=list)
+    non_executable_candidates: list[Candidate] = field(default_factory=list)
     active_goals: list[Any] = field(default_factory=list)
     goal_progress: dict[str, Any] = field(default_factory=dict)
     goal_diagnostics: dict[str, Any] = field(default_factory=dict)

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.phase3.adapters.legacy_safety_adapter import (
-    LegacySafetyAdapter,
+from agent.phase3.services.safety_service import (
+    SafetyValidationService,
     action_from_candidate,
     fallback_wait,
     normalize_action,
@@ -18,23 +18,24 @@ from agent.phase3.tools.recovery import (
 
 
 class SafetyTool:
-    """Phase 3 SafetyGate tool.
+    """Phase 3 safety validation tool.
 
-    SafetyGate remains a final hard-validation guardrail. It does not choose
+    Final safety validation remains a hard guardrail. It does not choose
     profit-seeking alternatives.
     """
 
     def __init__(self) -> None:
-        self._legacy = LegacySafetyAdapter()
+        self._safety = SafetyValidationService()
 
     def validate(self, state: AgentState) -> AgentState:
         if state.decision_state is None:
             raise ValueError("safety tool requires decision_state")
         candidate_before_safety = state.selected_candidate_id
+        executable = _executable_candidates(state)
         if state.selected_candidate is None:
             action = state.final_action
             if action is None:
-                recovered, recovery_reason = choose_recovery_candidate(state.valid_candidates + state.soft_risk_candidates)
+                recovered, recovery_reason = choose_recovery_candidate(executable)
                 if recovered is not None:
                     state.selected_candidate_id = recovered.candidate_id
                     state.selected_candidate = recovered
@@ -50,21 +51,21 @@ class SafetyTool:
                     state.debug["fallback_provenance"] = fallback_provenance(
                         source="safety_tool",
                         reason=reason,
-                        candidates=state.valid_candidates + state.soft_risk_candidates,
+                        candidates=executable,
                         recovery_attempted=True,
                         recovery_failed_reason=recovery_reason,
                     )
-            accepted, reason = self._legacy.validate(action, state.decision_state, state.visible_cargo)
+            accepted, reason = self._safety.validate(action, state.decision_state, state.visible_cargo)
             state.safety_result = {"accepted": accepted, "reason": reason}
             if not accepted:
                 recovered = None
                 recovery_reason = "no_executable_candidate_for_recovery"
                 recovery_reason_detail = ""
                 for candidate, candidate_recovery_reason in rank_recovery_candidates(
-                    state.valid_candidates + state.soft_risk_candidates
+                    executable
                 ):
                     recovery_action = action_from_candidate(candidate)
-                    recovery_accepted, recovery_reason_detail = self._legacy.validate(
+                    recovery_accepted, recovery_reason_detail = self._safety.validate(
                         recovery_action,
                         state.decision_state,
                         state.visible_cargo,
@@ -95,19 +96,19 @@ class SafetyTool:
                     state.debug["fallback_provenance"] = fallback_provenance(
                         source="safety_tool",
                         reason=fallback_reason,
-                        candidates=state.valid_candidates + state.soft_risk_candidates,
+                        candidates=executable,
                         recovery_attempted=True,
                         recovery_failed_reason=recovery_reason_detail or recovery_reason,
                     )
-                    accepted, reason = self._legacy.validate(action, state.decision_state, state.visible_cargo)
+                    accepted, reason = self._safety.validate(action, state.decision_state, state.visible_cargo)
                     state.safety_result = {"accepted": accepted, "reason": reason}
         else:
             proposed = action_from_candidate(state.selected_candidate)
-            accepted, reason = self._legacy.validate(proposed, state.decision_state, state.visible_cargo)
+            accepted, reason = self._safety.validate(proposed, state.decision_state, state.visible_cargo)
             state.safety_result = {"accepted": accepted, "reason": reason}
             if not accepted:
                 ranked_recovery = rank_recovery_candidates(
-                    state.valid_candidates + state.soft_risk_candidates,
+                    executable,
                     exclude_candidate_ids={state.selected_candidate.candidate_id},
                 )
                 recovered = None
@@ -115,7 +116,7 @@ class SafetyTool:
                 recovery_reason_detail = ""
                 for candidate, candidate_recovery_reason in ranked_recovery:
                     recovery_action = action_from_candidate(candidate)
-                    recovery_accepted, recovery_reason_detail = self._legacy.validate(
+                    recovery_accepted, recovery_reason_detail = self._safety.validate(
                         recovery_action,
                         state.decision_state,
                         state.visible_cargo,
@@ -148,11 +149,11 @@ class SafetyTool:
                     state.debug["fallback_provenance"] = fallback_provenance(
                         source="safety_tool",
                         reason=fallback_reason,
-                        candidates=state.valid_candidates + state.soft_risk_candidates,
+                        candidates=executable,
                         recovery_attempted=True,
                         recovery_failed_reason=recovery_reason_detail or recovery_reason,
                     )
-                    fallback_accepted, fallback_reason_detail = self._legacy.validate(
+                    fallback_accepted, fallback_reason_detail = self._safety.validate(
                         action,
                         state.decision_state,
                         state.visible_cargo,
@@ -198,3 +199,7 @@ def normalize_final_action(action: dict[str, Any]) -> dict[str, Any]:
 
 def safe_fallback_wait(state: AgentState, reason: str) -> tuple[dict[str, Any], str]:
     return fallback_wait(state.decision_state, reason)
+
+
+def _executable_candidates(state: AgentState) -> list[Any]:
+    return state.executable_candidates or (state.valid_candidates + state.soft_risk_candidates)

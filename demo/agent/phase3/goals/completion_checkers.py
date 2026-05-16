@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.agent_models import DecisionState, GeoPoint
-from agent.geo_utils import haversine_km
+from agent.phase3.domain.agent_models import DecisionState, GeoPoint
+from agent.phase3.domain.geo_utils import haversine_km
 
 
 def is_at_point(state: DecisionState, point: GeoPoint | None) -> bool:

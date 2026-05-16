@@ -1,6 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from agent.constraint_runtime import compute_constraint_runtime_state
+from agent.phase3.constraints.constraint_runtime import compute_constraint_runtime_state
 from agent.phase3.agent_state import AgentState
 
 

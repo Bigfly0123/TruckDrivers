@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.agent_models import Candidate
+from agent.phase3.domain.agent_models import Candidate
 
 
 def choose_recovery_candidate(
@@ -29,6 +29,13 @@ def rank_recovery_candidates(
     pool = [c for c in candidates if c.candidate_id not in excluded]
     if not pool:
         return []
+
+    with_decision_score = [c for c in pool if _fact_float(c, "decision_score") is not None]
+    if with_decision_score:
+        return [
+            (c, "highest_executable_decision_score")
+            for c in sorted(with_decision_score, key=lambda c: _fact_float(c, "decision_score") or -10**9, reverse=True)
+        ]
 
     with_long_term = [c for c in pool if _fact_float(c, "long_term_score_hint") is not None]
     if with_long_term:
@@ -58,7 +65,7 @@ def rank_recovery_candidates(
     purpose_wait = [
         c for c in pool
         if c.action == "wait"
-        and str(c.facts.get("wait_purpose") or "") in {"rest_progress_wait", "home_window_wait", "forbid_window_wait", "goal_hold_wait"}
+        and str(c.facts.get("wait_purpose") or "") in {"rest_progress_wait", "home_window_wait", "goal_hold_wait"}
     ]
     if purpose_wait:
         return [(c, "purpose_wait") for c in purpose_wait]

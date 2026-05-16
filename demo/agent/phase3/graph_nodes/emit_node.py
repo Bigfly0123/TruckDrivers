@@ -29,7 +29,7 @@ class EmitNode:
             state.debug["fallback_provenance"] = fallback_provenance(
                 source="emit_node",
                 reason=reason,
-                candidates=state.valid_candidates + state.soft_risk_candidates,
+                candidates=state.executable_candidates or (state.valid_candidates + state.soft_risk_candidates),
                 recovery_attempted=False,
             )
         diagnosis = self._diagnostic_tool.build_decision_diagnosis(state)

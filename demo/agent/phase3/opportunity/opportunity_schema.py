@@ -28,13 +28,27 @@ class CandidateOpportunityFacts:
     candidate_id: str
     action_type: str
     immediate_net: float | None = None
+    expected_penalty: float | None = None
+    decision_penalty_weight: float | None = None
+    decision_penalty_cost: float | None = None
+    net_after_decision_penalty: float | None = None
+    net_after_expected_penalty: float | None = None
+    duration_minutes: int | None = None
+    net_after_expected_penalty_per_hour: float | None = None
     destination_opportunity_score: float | None = None
     destination_visible_cargo_count: int | None = None
     destination_avg_nearby_order_net: float | None = None
     wait_opportunity_cost: float | None = None
+    best_alternative_rate: float | None = None
     best_forgone_order_id: str | None = None
     best_forgone_order_net: float | None = None
     profitable_order_count: int | None = None
+    wait_allowed: bool | None = None
+    wait_gate_reason: str | None = None
+    wait_expected_progress: bool | None = None
+    goal_progress_delta: float | None = None
+    decision_score: float | None = None
+    decision_score_reason: str | None = None
     future_constraint_risk: str | None = None
     future_value_estimate: float | None = None
     long_term_score_hint: float | None = None
@@ -46,4 +60,3 @@ class CandidateOpportunityFacts:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

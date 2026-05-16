@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import Counter
 from typing import Any
 
-from agent.agent_models import Candidate
+from agent.phase3.domain.agent_models import Candidate
 from agent.phase3.agent_state import AgentState
 
 
@@ -52,6 +52,8 @@ def profitable_hard_invalid_summary(candidates: list[Candidate], limit: int = 5)
                 "cargo_id": c.params.get("cargo_id"),
                 "estimated_net": _fact_float(c, "estimated_net"),
                 "long_term_score_hint": _fact_float(c, "long_term_score_hint"),
+                "decision_score": _fact_float(c, "decision_score"),
+                "load_window_audit": c.facts.get("load_window_audit"),
                 "hard_invalid_reasons": list(c.hard_invalid_reasons),
             }
             for c in top
@@ -70,6 +72,7 @@ def sample_hard_invalid_candidates(candidates: list[Candidate], limit: int = 5) 
             "hard_invalid_reasons": list(candidate.hard_invalid_reasons),
             "pickup_arrival_minute": candidate.facts.get("pickup_arrival_minute"),
             "cargo_deadline_minute": candidate.facts.get("cargo_deadline_minute"),
+            "load_window_audit": candidate.facts.get("load_window_audit"),
             "deadline_source": candidate.facts.get("deadline_source"),
             "finish_minute": candidate.facts.get("finish_minute"),
         })
@@ -89,7 +92,7 @@ def candidate_summary(state: AgentState) -> dict[str, Any]:
         "satisfy_candidate_types": [t for t in satisfy_types if t],
         "base_candidate_count": len(state.base_candidates),
         "goal_candidate_count": len(state.goal_candidates),
-        "legacy_constraint_satisfy_candidate_count": len(state.legacy_satisfy_candidates),
+        "planner_constraint_satisfy_candidate_count": len(state.planner_satisfy_candidates),
         "active_goal_count": goal_summary.get("active_goal_count", len(state.active_goals)),
         "active_goal_types": goal_summary.get("active_goal_types", {}),
         "goal_materialization_failures": goal_summary.get("goal_materialization_failures", {}),
@@ -156,12 +159,16 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "best_soft_risk_order_net_after_penalty": constraint.get("best_soft_risk_order_net_after_penalty"),
         "dominant_hard_invalid_reason": constraint.get("dominant_hard_invalid_reason"),
         "hard_invalid_reason_counts": hard_reason_counts,
+        "soft_risk_reason_counts": constraint.get("soft_risk_reason_counts", {}),
         "hard_invalid_reason_classification": hard_invalid_reason_classification(hard_reason_counts),
         "hard_soft_boundary_reclassification_count": hard_soft_boundary_reclassification_count(state.evaluated_candidates),
         **profitable_hard_summary,
         "top_hard_invalid_reasons": hard_reason_counts,
         "sample_hard_invalid_candidates": sample_hard_invalid_candidates(state.hard_invalid_candidates),
         "advisor_candidate_count": state.advisor_context.get("candidate_count", 0),
+        "advisor_executable_candidate_count": state.advisor_context.get("executable_candidate_count", 0),
+        "decision_core_filtered_candidate_count": state.advisor_context.get("decision_core_filtered_candidate_count", 0),
+        "decision_core_top_candidate_ids": state.advisor_context.get("decision_core_top_candidate_ids", []),
         "active_reflection_hint_count": state.advisor_context.get("active_reflection_hint_count", 0),
         "reflection_hints_used": state.advisor_context.get("active_reflection_hint_count", 0),
         "reflection_active_hint_count_after_update": reflection_summary.get("active_reflection_hint_count", 0),
@@ -179,6 +186,13 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "wait_opportunity_cost_avg": opportunity_summary.get("wait_opportunity_cost_avg"),
         "wait_opportunity_cost_sum": opportunity_summary.get("wait_opportunity_cost_sum"),
         "high_cost_wait_count": opportunity_summary.get("high_cost_wait_count"),
+        "wait_gate_blocked_count": opportunity_summary.get("wait_gate_blocked_count"),
+        "wait_gate_allowed_count": opportunity_summary.get("wait_gate_allowed_count"),
+        "best_decision_candidate_id": opportunity_summary.get("best_decision_candidate_id"),
+        "best_decision_score": opportunity_summary.get("best_decision_score"),
+        "best_decision_candidate_action": opportunity_summary.get("best_decision_candidate_action"),
+        "advisor_top_candidate_count": opportunity_summary.get("advisor_top_candidate_count"),
+        "top_executable_candidates_by_decision_score": opportunity_summary.get("top_executable_candidates_by_decision_score"),
         "take_order_destination_value_avg": opportunity_summary.get("take_order_destination_value_avg"),
         "specific_cargo_watch_active_count": opportunity_summary.get("specific_cargo_watch_active_count"),
         "target_cargo_unavailable_but_high_wait_cost_count": opportunity_summary.get("target_cargo_unavailable_but_high_wait_cost_count"),
@@ -216,6 +230,16 @@ def final_decision_summary(state: AgentState) -> dict[str, Any]:
         "selected_candidate_penalty_at_risk": selected_facts.get("penalty_at_risk"),
         "selected_candidate_opportunity_cost_hint": selected_facts.get("opportunity_cost_hint"),
         "selected_candidate_long_term_score_hint": selected_facts.get("long_term_score_hint"),
+        "selected_candidate_decision_score": selected_facts.get("decision_score"),
+        "selected_candidate_decision_score_reason": selected_facts.get("decision_score_reason"),
+        "selected_candidate_expected_penalty": selected_facts.get("expected_penalty"),
+        "selected_candidate_net_after_expected_penalty": selected_facts.get("net_after_expected_penalty"),
+        "selected_candidate_duration_minutes": selected_facts.get("duration_minutes"),
+        "selected_candidate_net_after_expected_penalty_per_hour": selected_facts.get("net_after_expected_penalty_per_hour"),
+        "selected_candidate_goal_progress_delta": selected_facts.get("goal_progress_delta"),
+        "selected_candidate_wait_allowed": selected_facts.get("wait_allowed"),
+        "selected_candidate_wait_gate_reason": selected_facts.get("wait_gate_reason"),
+        "selected_candidate_best_alternative_rate": selected_facts.get("best_alternative_rate"),
         "selected_candidate_wait_opportunity_cost": selected_facts.get("wait_opportunity_cost"),
         "selected_candidate_wait_purpose": selected_wait_purpose,
         "selected_candidate_wait_expected_progress": selected_wait_expected_progress,

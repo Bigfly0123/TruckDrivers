@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from agent.phase3.agent_state import AgentState
@@ -14,6 +13,7 @@ from agent.phase3.planning.day_plan import (
     DayPlan,
 )
 from agent.phase3.utils.summaries import hard_invalid_reason_counts
+from agent.phase3.utils.json_cleaner import loads_json_object
 from simkit.ports import SimulationApiPort
 
 
@@ -31,7 +31,7 @@ class StrategicPlannerAgent:
             payload = self._build_payload(state)
             response = self._api.model_chat_completion(payload)
             content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-            data = json.loads(_extract_json(content))
+            data = self._load_or_repair_plan_json(content, state)
             return self._parse_plan(state, data).normalize(_normalization_context(state))
         except Exception as exc:
             self._logger.warning("strategic planner failed: %s", exc)
@@ -65,6 +65,38 @@ class StrategicPlannerAgent:
             "response_format": {"type": "json_object"},
         }
 
+    def _load_or_repair_plan_json(self, content: str, state: AgentState) -> dict[str, Any]:
+        try:
+            return loads_json_object(content)
+        except Exception as first_exc:
+            self._logger.warning("strategic planner json parse failed, retrying repair: %s", first_exc)
+            repair_payload = {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Repair the malformed planner response into one valid JSON object only. "
+                            "Do not add markdown or commentary. Use these keys only: "
+                            "strategy_summary, primary_goal, secondary_goals, risk_focus, "
+                            "constraint_priorities, rest_strategy, work_window_strategy, "
+                            "location_strategy, cargo_strategy, avoid_behaviors, "
+                            "advisor_guidance, confidence, reason."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps({
+                            "malformed_response": str(content or "")[:4000],
+                            "fallback_context": self._build_summary(state),
+                        }, ensure_ascii=False),
+                    },
+                ],
+                "response_format": {"type": "json_object"},
+            }
+            repaired = self._api.model_chat_completion(repair_payload)
+            repaired_content = repaired.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            return loads_json_object(repaired_content)
+
     def _build_summary(self, state: AgentState) -> dict[str, Any]:
         constraint_summary = state.debug.get("constraint_summary", {})
         runtime_summary = state.debug.get("runtime_summary", {})
@@ -94,7 +126,7 @@ class StrategicPlannerAgent:
             },
             "diagnostic_summary": {
                 "advisor_chose_wait_despite_profitable_order": diagnosis.get("advisor_chose_wait_despite_profitable_order"),
-                "candidate_pool_empty": diagnosis.get("candidate_pool_empty"),
+                "candidate_generation_empty": diagnosis.get("candidate_generation_empty"),
                 "only_wait_candidates_available": diagnosis.get("only_wait_candidates_available"),
             },
         }
@@ -140,14 +172,6 @@ class StrategicPlannerAgent:
             fallback_used=True,
         )
         return plan.normalize(_normalization_context(state))
-
-
-def _extract_json(content: str) -> str:
-    text = str(content or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?", "", text).strip()
-        text = re.sub(r"```$", "", text).strip()
-    return text or "{}"
 
 
 def _recent_action_summary(state: AgentState) -> list[dict[str, Any]]:

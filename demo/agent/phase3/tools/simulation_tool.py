@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.planner import estimate_scan_cost
-from agent.state_tracker import StateTracker
+from agent.phase3.candidates.candidate_fact_builder import estimate_scan_cost
+from agent.phase3.observation.state_tracker import StateTracker
 from simkit.ports import SimulationApiPort
 
 

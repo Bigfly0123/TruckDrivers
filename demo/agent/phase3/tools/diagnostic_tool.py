@@ -53,7 +53,7 @@ class DiagnosticTool:
             "hard_invalid_reason_counts": constraint.get("hard_invalid_reason_counts", {}),
             "advisor_chose_wait_despite_profitable_order": bool(selected_is_wait and has_profitable and not state.fallback_used),
             "safety_rejected_advisor_choice": bool(safety.get("safety_rejected") and state.fallback_used),
-            "candidate_pool_empty": len(state.evaluated_candidates or state.raw_candidates) == 0,
+            "candidate_generation_empty": len(state.evaluated_candidates or state.raw_candidates) == 0,
             "only_wait_candidates_available": _only_wait_candidates_available(state),
             "active_goal_count": goal_summary.get("active_goal_count", 0),
             "goal_candidate_count": goal_summary.get("goal_candidate_count", 0),
@@ -76,8 +76,16 @@ class DiagnosticTool:
             "wait_reason_category": _wait_reason_category(state, constraint, selected_facts, selected_is_wait),
             "selected_candidate_wait_purpose": "fallback_wait" if state.fallback_used and selected_is_wait else selected_facts.get("wait_purpose"),
             "selected_candidate_wait_expected_progress": False if state.fallback_used and selected_is_wait else selected_facts.get("wait_expected_progress"),
+            "selected_candidate_wait_allowed": selected_facts.get("wait_allowed"),
+            "selected_candidate_wait_gate_reason": selected_facts.get("wait_gate_reason"),
             "selected_candidate_wait_opportunity_cost": selected_facts.get("wait_opportunity_cost"),
             "selected_candidate_long_term_score_hint": selected_facts.get("long_term_score_hint"),
+            "selected_candidate_decision_score": selected_facts.get("decision_score"),
+            "selected_candidate_net_after_expected_penalty_per_hour": selected_facts.get("net_after_expected_penalty_per_hour"),
+            "best_decision_candidate_id": opportunity_summary.get("best_decision_candidate_id"),
+            "best_decision_score": opportunity_summary.get("best_decision_score"),
+            "wait_gate_blocked_count": opportunity_summary.get("wait_gate_blocked_count"),
+            "advisor_top_candidate_count": opportunity_summary.get("advisor_top_candidate_count"),
             "best_long_term_candidate_id": opportunity_summary.get("best_long_term_candidate_id"),
             "best_long_term_score_hint": opportunity_summary.get("best_long_term_score_hint"),
             "best_executable_long_term_candidate_id": opportunity_summary.get("best_executable_long_term_candidate_id"),
@@ -173,5 +181,5 @@ def _advisor_ignored_best_long_term(
 
 
 def _only_wait_candidates_available(state: AgentState) -> bool:
-    executable = state.valid_candidates + state.soft_risk_candidates
+    executable = state.executable_candidates or (state.valid_candidates + state.soft_risk_candidates)
     return bool(executable) and all(c.action == "wait" for c in executable)

@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.agent_models import Candidate, DecisionState
+from agent.phase3.domain.agent_models import Candidate, DecisionState
 from agent.phase3.goals.action_templates import (
     clone_goal_order_candidate,
     reposition_candidate,
@@ -10,6 +10,10 @@ from agent.phase3.goals.action_templates import (
 )
 from agent.phase3.goals.completion_checkers import is_at_point
 from agent.phase3.goals.goal_schema import Goal, GoalProgress, GoalStep
+from agent.phase3.domain.geo_utils import distance_to_minutes, haversine_km
+
+DEFAULT_COST_PER_KM = 1.5
+REPOSITION_SPEED_KM_PER_HOUR = 60.0
 
 
 class GoalMaterializer:
@@ -100,6 +104,7 @@ class GoalMaterializer:
                 point=step.point,
                 facts={
                     **facts,
+                    **_reposition_facts(state, step.point),
                     "deadline_minute": step.deadline_minute,
                     "penalty_if_missed": _penalty(goal),
                     "materialization_reason": "move_to_next_goal_location",
@@ -114,6 +119,7 @@ class GoalMaterializer:
                     point=step.point,
                     facts={
                         **facts,
+                        **_reposition_facts(state, step.point),
                         "penalty_if_missed": _penalty(goal),
                         "materialization_reason": "cannot_stay_not_at_target_reach_first",
                     },
@@ -142,6 +148,7 @@ class GoalMaterializer:
                     point=step.point,
                     facts={
                         **facts,
+                        **_reposition_facts(state, step.point),
                         "deadline_minute": step.deadline_minute,
                         "penalty_if_missed": _penalty(goal),
                         "materialization_reason": "cannot_wait_until_not_at_target_reach_first",
@@ -163,6 +170,7 @@ class GoalMaterializer:
                     point=step.point,
                     facts={
                         **facts,
+                        **_reposition_facts(state, step.point),
                         "deadline_minute": step.deadline_minute,
                         "penalty_if_missed": _penalty(goal),
                         "materialization_reason": "cannot_hold_not_at_target_reach_first",
@@ -182,6 +190,9 @@ class GoalMaterializer:
                     **facts,
                     "required_minutes": step.required_minutes,
                     "deadline_minute": step.deadline_minute,
+                    "window_hold_preservation": step.step_type == "hold_location_until_time",
+                    "hold_window_active": step.step_type == "hold_location_until_time" and _hold_is_active(step, state),
+                    "hold_window_remaining_minutes": remaining if step.step_type == "hold_location_until_time" else None,
                     "remaining_minutes_after_wait": max(0, remaining - min(60, remaining)),
                     "actually_satisfies_after_this_wait": remaining <= 60,
                     "penalty_if_missed": _penalty(goal),
@@ -352,6 +363,20 @@ def _completion_condition(step: GoalStep) -> str:
     return "unknown"
 
 
+def _reposition_facts(state: DecisionState, point: Any) -> dict[str, Any]:
+    distance = haversine_km(state.current_latitude, state.current_longitude, point.latitude, point.longitude)
+    duration = distance_to_minutes(distance, REPOSITION_SPEED_KM_PER_HOUR)
+    cost = round(distance * DEFAULT_COST_PER_KM, 2)
+    return {
+        "estimated_distance_km": round(distance, 2),
+        "reposition_distance_km": round(distance, 2),
+        "estimated_duration_minutes": duration,
+        "estimated_cost": cost,
+        "estimated_net": -cost,
+        "destination": (point.latitude, point.longitude),
+    }
+
+
 def _penalty(goal: Goal) -> float:
     return max(float(goal.penalty_amount or 0.0), 100.0)
 
@@ -365,21 +390,39 @@ def _goal_urgency(goal: Goal, step: GoalStep, state: DecisionState, runtime: Any
         latest = _latest_safe_rest_start(state, required, current_streak)
         return _rest_urgency(state, latest, max(0, required - current_streak), False), state.current_minute >= latest, latest
     if step.step_type == "wait_until_window_end":
-        return "critical", True, state.current_minute
+        return "low", False, state.current_minute
     if step.deadline_minute is not None:
         remaining = int(step.deadline_minute) - state.current_minute
         if step.step_type == "hold_location_until_time" and _hold_is_active(step, state):
             return "critical", True, int(step.deadline_minute)
+        latest_safe_start = _latest_safe_goal_start(step, state)
+        if latest_safe_start is not None and state.current_minute >= latest_safe_start:
+            return "critical", True, latest_safe_start
+        if latest_safe_start is not None and latest_safe_start - state.current_minute <= 120:
+            return "high", False, latest_safe_start
         if remaining <= 0:
             return "critical", True, int(step.deadline_minute)
         if remaining <= 60:
             return "critical", True, int(step.deadline_minute)
-        if remaining <= 180 or penalty >= 1000:
-            return "high", remaining <= 180, int(step.deadline_minute)
+        if remaining <= 180:
+            return "high", False, int(step.deadline_minute)
+        if penalty >= 1000 and remaining <= 360:
+            return "medium", False, int(step.deadline_minute)
         return "medium", False, int(step.deadline_minute)
     if goal.goal_type in {"specific_cargo", "ordered_steps"} and penalty >= 1000:
         return "high", False, None
     return "medium", False, None
+
+
+def _latest_safe_goal_start(step: GoalStep, state: DecisionState) -> int | None:
+    if step.deadline_minute is None or step.point is None:
+        return None
+    if step.step_type not in {"reach_location", "return_to_location", "stay_at_location", "stay_until_time", "hold_location_until_time"}:
+        return None
+    distance = haversine_km(state.current_latitude, state.current_longitude, step.point.latitude, step.point.longitude)
+    travel_minutes = distance_to_minutes(distance, REPOSITION_SPEED_KM_PER_HOUR)
+    buffer_minutes = 15 if step.step_type in {"reach_location", "return_to_location"} else 30
+    return int(step.deadline_minute) - travel_minutes - buffer_minutes
 
 
 def _latest_safe_rest_start(state: DecisionState, required: int, current_streak: int) -> int:

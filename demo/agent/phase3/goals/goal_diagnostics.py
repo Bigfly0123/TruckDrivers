@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import Counter
 from typing import Any
 
-from agent.agent_models import Candidate
+from agent.phase3.domain.agent_models import Candidate
 from agent.phase3.goals.goal_schema import Goal, GoalProgress
 
 

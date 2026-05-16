@@ -1,6 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from agent.agent_models import Candidate
+from agent.phase3.domain.agent_models import Candidate
 from agent.phase3.opportunity.opportunity_schema import MarketSnapshot
 
 

@@ -122,6 +122,11 @@ def build_report(graph_events: list[dict[str, Any]], decisions: list[dict[str, A
         f"| wait_opportunity_cost_sum | {opportunity_stats['wait_opportunity_cost_sum']} |",
         f"| high_cost_wait_count_total | {opportunity_stats['high_cost_wait_count_total']} |",
         f"| high_cost_wait_selected_count | {opportunity_stats['high_cost_wait_selected_count']} |",
+        f"| wait_gate_blocked_total | {opportunity_stats['wait_gate_blocked_total']} |",
+        f"| wait_gate_allowed_total | {opportunity_stats['wait_gate_allowed_total']} |",
+        f"| selected_wait_disallowed_count | {opportunity_stats['selected_wait_disallowed_count']} |",
+        f"| advisor_top_candidate_count_total | {opportunity_stats['advisor_top_candidate_count_total']} |",
+        f"| decision_core_filtered_candidate_count_total | {opportunity_stats['decision_core_filtered_candidate_count_total']} |",
         f"| used_opportunity_signal_count | {opportunity_stats['used_opportunity_signal_count']} |",
         f"| future_value_used_in_reason_count | {opportunity_stats['future_value_used_in_reason_count']} |",
         f"| advisor_ignored_best_long_term_count | {opportunity_stats['advisor_ignored_best_long_term_count']} |",
@@ -444,8 +449,8 @@ def _warning_counts(decisions: list[dict[str, Any]]) -> Counter[tuple[str, str]]
         diagnosis = decision.get("diagnosis") if isinstance(decision.get("diagnosis"), dict) else {}
         if diagnosis.get("advisor_chose_wait_despite_profitable_order"):
             counts[(driver, "profitable_valid_order_but_selected_wait")] += 1
-        if diagnosis.get("candidate_pool_empty"):
-            counts[(driver, "candidate_pool_empty")] += 1
+        if diagnosis.get("candidate_generation_empty"):
+            counts[(driver, "candidate_generation_empty")] += 1
         if diagnosis.get("only_wait_candidates_available"):
             counts[(driver, "only_wait_candidates_available")] += 1
         if diagnosis.get("safety_rejected_advisor_choice"):
@@ -655,6 +660,11 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
     wait_opportunity_cost_sum = 0.0
     high_cost_wait_count_total = 0
     high_cost_wait_selected_count = 0
+    wait_gate_blocked_total = 0
+    wait_gate_allowed_total = 0
+    selected_wait_disallowed_count = 0
+    advisor_top_candidate_count_total = 0
+    decision_core_filtered_candidate_count_total = 0
     used_opportunity_signal_count = 0
     future_value_used_in_reason_count = 0
     advisor_ignored_best_long_term_count = 0
@@ -670,6 +680,8 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
     wait_missing_purpose_count = 0
     hard_soft_boundary_reclassification_count = 0
     for decision in decisions:
+        final_action = decision.get("final_action") if isinstance(decision.get("final_action"), dict) else {}
+        selected_is_wait = final_action.get("action") == "wait" or decision.get("selected_candidate_action") == "wait"
         if _safe_int(decision.get("opportunity_facts_count")) > 0:
             decisions_with_opportunity_facts += 1
         candidate_count_with_future_value_total += _safe_int(decision.get("candidate_count_with_future_value"))
@@ -678,6 +690,12 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         except (TypeError, ValueError):
             pass
         high_cost_wait_count_total += _safe_int(decision.get("high_cost_wait_count"))
+        wait_gate_blocked_total += _safe_int(decision.get("wait_gate_blocked_count"))
+        wait_gate_allowed_total += _safe_int(decision.get("wait_gate_allowed_count"))
+        advisor_top_candidate_count_total += _safe_int(decision.get("advisor_top_candidate_count"))
+        decision_core_filtered_candidate_count_total += _safe_int(decision.get("decision_core_filtered_candidate_count"))
+        if selected_is_wait and decision.get("selected_candidate_wait_allowed") is False:
+            selected_wait_disallowed_count += 1
         if decision.get("used_opportunity_signal"):
             used_opportunity_signal_count += 1
         reason_text = " ".join(
@@ -690,8 +708,6 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         category = diagnosis.get("wait_reason_category")
         if category:
             wait_reason_categories[str(category)] += 1
-        final_action = decision.get("final_action") if isinstance(decision.get("final_action"), dict) else {}
-        selected_is_wait = final_action.get("action") == "wait" or decision.get("selected_candidate_action") == "wait"
         purpose = decision.get("selected_candidate_wait_purpose") or diagnosis.get("selected_candidate_wait_purpose")
         if selected_is_wait:
             if purpose:
@@ -740,6 +756,11 @@ def _opportunity_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
         "wait_opportunity_cost_sum": round(wait_opportunity_cost_sum, 2),
         "high_cost_wait_count_total": high_cost_wait_count_total,
         "high_cost_wait_selected_count": high_cost_wait_selected_count,
+        "wait_gate_blocked_total": wait_gate_blocked_total,
+        "wait_gate_allowed_total": wait_gate_allowed_total,
+        "selected_wait_disallowed_count": selected_wait_disallowed_count,
+        "advisor_top_candidate_count_total": advisor_top_candidate_count_total,
+        "decision_core_filtered_candidate_count_total": decision_core_filtered_candidate_count_total,
         "used_opportunity_signal_count": used_opportunity_signal_count,
         "future_value_used_in_reason_count": future_value_used_in_reason_count,
         "advisor_ignored_best_long_term_count": advisor_ignored_best_long_term_count,

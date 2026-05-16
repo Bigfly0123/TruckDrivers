@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
-from agent.agent_models import Candidate, GeoPoint
+from agent.phase3.domain.agent_models import Candidate, GeoPoint
 
 
 def wait_candidate(

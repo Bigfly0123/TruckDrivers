@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from statistics import mean
 from typing import Any
 
-from agent.agent_models import Candidate
-from agent.geo_utils import haversine_km
+from agent.phase3.domain.agent_models import Candidate
+from agent.phase3.domain.geo_utils import haversine_km
 from agent.phase3.agent_state import AgentState
 
 DESTINATION_RADIUS_KM = 80.0
@@ -19,7 +19,7 @@ class DestinationValueEstimator:
                 "destination_visible_cargo_count": None,
                 "destination_avg_nearby_order_net": None,
             }
-        nearby_nets = _nearby_order_nets(destination, state.valid_candidates + state.soft_risk_candidates)
+        nearby_nets = _nearby_order_nets(destination, _executable_candidates(state))
         count = len(nearby_nets)
         avg_net = round(mean(nearby_nets), 2) if nearby_nets else None
         score = _score(count, avg_net)
@@ -51,10 +51,19 @@ def _nearby_order_nets(destination: tuple[float, float], candidates: list[Candid
         if not isinstance(start, (list, tuple)) or len(start) < 2:
             continue
         if haversine_km(destination[0], destination[1], start[0], start[1]) <= DESTINATION_RADIUS_KM:
-            net = _safe_float(candidate.facts.get("estimated_net_after_penalty", candidate.facts.get("estimated_net")))
+            net = _safe_float(
+                candidate.facts.get(
+                    "estimated_net_after_decision_penalty",
+                    candidate.facts.get("estimated_net_after_penalty", candidate.facts.get("estimated_net")),
+                )
+            )
             if net > 0:
                 nets.append(net)
     return nets
+
+
+def _executable_candidates(state: AgentState) -> list[Candidate]:
+    return state.executable_candidates or (state.valid_candidates + state.soft_risk_candidates)
 
 
 def _score(count: int, avg_net: float | None) -> float:
@@ -75,4 +84,3 @@ def _safe_float(value: Any) -> float:
         return float(value or 0.0)
     except (TypeError, ValueError):
         return 0.0
-
