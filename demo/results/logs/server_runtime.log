@@ -531,3 +531,31 @@
 2026-05-16 16:11:18,595 INFO [bench.embedded_agent.engine] decision driver_id=D002 action=take_order params={"cargo_id":"464355"} tokens prompt=11593 completion=1008 reasoning=0 total=12601
 2026-05-16 16:11:18,613 INFO [bench.embedded_agent.environment] query_cargo ok driver_id=D002 items=100 scan_cost_min=10
 2026-05-16 16:11:18,613 INFO [bench.embedded_agent.environment] query_decision_history driver_id=D002 step=-1 total=30 returned=30
+2026-05-16 16:11:30,973 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:11:33,315 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:11:33,315 INFO [agent.phase3.advisor.llm_decision_advisor] advisor chose candidate_id=take_order_298532 reason=Highest net after penalty despite rest risk; profit justifies the 200 penalty.
+2026-05-16 16:11:33,323 INFO [bench.embedded_agent.engine] decision driver_id=D002 action=take_order params={"cargo_id":"298532"} tokens prompt=11085 completion=925 reasoning=0 total=12010
+2026-05-16 16:11:33,335 INFO [bench.embedded_agent.environment] query_cargo ok driver_id=D002 items=100 scan_cost_min=10
+2026-05-16 16:11:33,335 INFO [bench.embedded_agent.environment] query_decision_history driver_id=D002 step=-1 total=31 returned=31
+2026-05-16 16:11:45,187 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:11:47,975 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:11:47,976 INFO [agent.phase3.advisor.llm_decision_advisor] advisor chose candidate_id=take_order_301560 reason=Best decision score, highest net, satisfies all constraints, low risk.
+2026-05-16 16:11:47,984 INFO [bench.embedded_agent.engine] decision driver_id=D002 action=take_order params={"cargo_id":"301560"} tokens prompt=10628 completion=967 reasoning=0 total=11595
+2026-05-16 16:11:47,997 INFO [bench.embedded_agent.environment] query_cargo ok driver_id=D002 items=100 scan_cost_min=10
+2026-05-16 16:11:47,998 INFO [bench.embedded_agent.environment] query_decision_history driver_id=D002 step=-1 total=32 returned=32
+2026-05-16 16:11:50,774 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:11:50,774 INFO [agent.phase3.advisor.llm_decision_advisor] advisor chose candidate_id=take_order_304435 reason=Zero-risk order meets constraints; risk tradeoffs jeopardize mandatory rest.
+2026-05-16 16:11:50,783 INFO [bench.embedded_agent.engine] decision driver_id=D002 action=take_order params={"cargo_id":"304435"} tokens prompt=9814 completion=141 reasoning=0 total=9955
+2026-05-16 16:11:50,792 INFO [bench.embedded_agent.environment] query_cargo ok driver_id=D002 items=100 scan_cost_min=10
+2026-05-16 16:11:50,792 INFO [bench.embedded_agent.environment] query_decision_history driver_id=D002 step=-1 total=33 returned=33
+2026-05-16 16:11:53,926 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:11:53,929 INFO [agent.phase3.advisor.llm_decision_advisor] advisor chose candidate_id=take_order_194139 reason=Highest net profit, zero penalty exposure, satisfies all constraints.
+2026-05-16 16:11:53,956 INFO [bench.embedded_agent.engine] decision driver_id=D002 action=take_order params={"cargo_id":"194139"} tokens prompt=10762 completion=122 reasoning=0 total=10884
+2026-05-16 16:11:53,971 INFO [bench.embedded_agent.environment] query_cargo ok driver_id=D002 items=100 scan_cost_min=10
+2026-05-16 16:11:53,971 INFO [bench.embedded_agent.environment] query_decision_history driver_id=D002 step=-1 total=34 returned=34
+2026-05-16 16:12:03,952 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:12:07,044 INFO [bench.embedded_agent.environment] model_chat_completion ok
+2026-05-16 16:12:07,044 INFO [agent.phase3.advisor.llm_decision_advisor] advisor chose candidate_id=take_order_203579 reason=Highest profit and decision score; rest already unrecoverable today.
+2026-05-16 16:12:07,053 INFO [bench.embedded_agent.engine] decision driver_id=D002 action=take_order params={"cargo_id":"203579"} tokens prompt=12031 completion=679 reasoning=0 total=12710
+2026-05-16 16:12:07,068 INFO [bench.embedded_agent.environment] query_cargo ok driver_id=D002 items=100 scan_cost_min=10
+2026-05-16 16:12:07,068 INFO [bench.embedded_agent.environment] query_decision_history driver_id=D002 step=-1 total=35 returned=35
